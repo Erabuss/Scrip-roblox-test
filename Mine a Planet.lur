@@ -1,0 +1,351 @@
+-- ==========================================
+-- 1. SETUP VARIABLES & SERVICES
+-- ==========================================
+local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local VirtualUser = game:GetService("VirtualUser")
+
+local OreEvent = ReplicatedStorage:WaitForChild("Net"):WaitForChild("RequestCollectDockOre")
+
+-- ลบ UI เก่าออก
+if CoreGui:FindFirstChild("ModernFarmUI") then
+    CoreGui.ModernFarmUI:Destroy()
+end
+
+-- ==========================================
+-- 2. CREATE MODERN UI MENU 
+-- ==========================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "ModernFarmUI"
+ScreenGui.Parent = CoreGui
+
+-- ตัวแปรเก็บขนาดของ UI (ตอนกางเต็ม vs ตอนย่อ)
+local fullSize = UDim2.new(0, 230, 0, 240)
+local minSize = UDim2.new(0, 230, 0, 45)
+local isMinimized = false
+
+-- กรอบหลัก (MainFrame)
+local MainFrame = Instance.new("Frame")
+MainFrame.Parent = ScreenGui
+MainFrame.Size = fullSize
+MainFrame.Position = UDim2.new(0.05, 0, 0.4, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35) -- สีเทาเข้มพรีเมียม
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.ClipsDescendants = true -- สำคัญสำหรับการทำแอนิเมชันย่อหน้าต่าง
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 10)
+MainCorner.Parent = MainFrame
+
+-- แถบด้านบน (Header/TopBar)
+local TopBar = Instance.new("Frame")
+TopBar.Parent = MainFrame
+TopBar.Size = UDim2.new(1, 0, 0, 45)
+TopBar.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+TopBar.BorderSizePixel = 0
+
+local TopCorner = Instance.new("UICorner")
+TopCorner.CornerRadius = UDim.new(0, 10)
+TopCorner.Parent = TopBar
+
+-- กลบมุมล่างของ TopBar ให้เหลี่ยมเชื่อมกับตัว MainFrame
+local TopFix = Instance.new("Frame")
+TopFix.Parent = TopBar
+TopFix.Size = UDim2.new(1, 0, 0, 10)
+TopFix.Position = UDim2.new(0, 0, 1, -10)
+TopFix.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+TopFix.BorderSizePixel = 0
+
+local Title = Instance.new("TextLabel")
+Title.Parent = TopBar
+Title.Size = UDim2.new(1, -50, 1, 0)
+Title.Position = UDim2.new(0, 15, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "✨ 3-in-1 Smart Farm"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 15
+Title.Font = Enum.Font.GothamBold
+Title.TextXAlignment = Enum.TextXAlignment.Left
+
+-- ปุ่มย่อหน้าต่าง (Minimize Button)
+local MinBtn = Instance.new("TextButton")
+MinBtn.Parent = TopBar
+MinBtn.Size = UDim2.new(0, 30, 0, 30)
+MinBtn.Position = UDim2.new(1, -40, 0, 7)
+MinBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+MinBtn.Text = "–"
+MinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+MinBtn.TextSize = 18
+MinBtn.Font = Enum.Font.GothamBold
+
+local MinCorner = Instance.new("UICorner")
+MinCorner.CornerRadius = UDim.new(0, 6)
+MinCorner.Parent = MinBtn
+
+-- พื้นที่รวมปุ่มกด (Content Container)
+local Content = Instance.new("Frame")
+Content.Parent = MainFrame
+Content.Size = UDim2.new(1, -20, 1, -55)
+Content.Position = UDim2.new(0, 10, 0, 50)
+Content.BackgroundTransparency = 1
+
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.Parent = Content
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 8)
+
+-- ฟังก์ชันสำหรับสร้างปุ่มเพื่อความสวยงามและโค้ดไม่รก
+local function createToggle(name, text, order)
+    local btn = Instance.new("TextButton")
+    btn.Name = name
+    btn.Parent = Content
+    btn.Size = UDim2.new(1, 0, 0, 35)
+    btn.BackgroundColor3 = Color3.fromRGB(255, 75, 75) -- สีแดงเริ่มต้น
+    btn.Text = " " .. text
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.TextSize = 13
+    btn.Font = Enum.Font.GothamBold
+    btn.TextXAlignment = Enum.TextXAlignment.Left
+    btn.LayoutOrder = order
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = btn
+    return btn
+end
+
+local SellToggle = createToggle("SellToggle", "🔴 1. Auto Sell", 1)
+
+-- พื้นที่สำหรับช่องใส่ Delay (จัดให้อยู่ใต้ปุ่ม Sell)
+local DelayFrame = Instance.new("Frame")
+DelayFrame.Parent = Content
+DelayFrame.Size = UDim2.new(1, 0, 0, 30)
+DelayFrame.BackgroundTransparency = 1
+DelayFrame.LayoutOrder = 2
+
+local DelayLabel = Instance.new("TextLabel")
+DelayLabel.Parent = DelayFrame
+DelayLabel.Size = UDim2.new(0.6, 0, 1, 0)
+DelayLabel.BackgroundTransparency = 1
+DelayLabel.Text = "Selling Delay (Sec):"
+DelayLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+DelayLabel.TextSize = 12
+DelayLabel.Font = Enum.Font.GothamSemibold
+DelayLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local DelayInput = Instance.new("TextBox")
+DelayInput.Parent = DelayFrame
+DelayInput.Size = UDim2.new(0.4, 0, 1, 0)
+DelayInput.Position = UDim2.new(0.6, 0, 0, 0)
+DelayInput.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+DelayInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+DelayInput.Text = "300"
+DelayInput.TextSize = 13
+DelayInput.Font = Enum.Font.GothamBold
+DelayInput.ClearTextOnFocus = false
+
+local InputCorner = Instance.new("UICorner")
+InputCorner.CornerRadius = UDim.new(0, 6)
+InputCorner.Parent = DelayInput
+
+local EventToggle = createToggle("EventToggle", "🔴 2. Auto EventDrop", 3)
+local AfkToggle = createToggle("AfkToggle", "🔴 3. Anti-AFK", 4)
+
+-- ==========================================
+-- 3. CORE FUNCTIONS (ตัวแปรและฟังก์ชันค้นหา)
+-- ==========================================
+_G.AutoSellActive = false
+_G.AutoEventActive = false
+_G.AntiAFKActive = false
+_G.IsSellingNow = false 
+_G.SellDelay = tonumber(DelayInput.Text) or 300
+
+DelayInput.FocusLost:Connect(function()
+    local val = tonumber(DelayInput.Text)
+    if val and val > 0 then
+        _G.SellDelay = val
+    else
+        DelayInput.Text = tostring(_G.SellDelay)
+    end
+end)
+
+local function getBasePlatform()
+    return workspace:FindFirstChild("FarmStar") 
+        and workspace.FarmStar:FindFirstChild("Platforms") 
+        and workspace.FarmStar.Platforms:FindFirstChild("9413840517")
+end
+
+local function getClosestEventDrop(playerPosition)
+    local closestObj = nil
+    local shortestDistance = math.huge
+    local sharedFolder = workspace:FindFirstChild("FarmStar") 
+        and workspace.FarmStar:FindFirstChild("EventDrops") 
+        and workspace.FarmStar.EventDrops:FindFirstChild("Shared")
+        
+    if sharedFolder then
+        for _, obj in pairs(sharedFolder:GetChildren()) do
+            if obj.Name == "FS_EventDrop" and obj:IsA("BasePart") then
+                local distance = (obj.Position - playerPosition).Magnitude
+                if distance < shortestDistance then
+                    shortestDistance = distance
+                    closestObj = obj
+                end
+            end
+        end
+    end
+    return closestObj
+end
+
+local function getBaseSellPrompt()
+    local myPlatform = getBasePlatform()
+    if myPlatform then
+        for _, obj in pairs(myPlatform:GetDescendants()) do
+            if obj:IsA("ProximityPrompt") and obj.ActionText and string.find(obj.ActionText, "Sell") then
+                return obj
+            end
+        end
+    end
+    return nil
+end
+
+local function slideTo(targetCFrame, speed)
+    local rootPart = Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return end
+    
+    local distance = (rootPart.Position - targetCFrame.Position).Magnitude
+    local timeToSlide = distance / speed
+    local tweenInfo = TweenInfo.new(timeToSlide, Enum.EasingStyle.Linear)
+    local tween = TweenService:Create(rootPart, tweenInfo, {CFrame = targetCFrame})
+    
+    tween:Play()
+    tween.Completed:Wait() 
+end
+
+-- ==========================================
+-- 4. ROUTINES (ฟังก์ชันลูปการทำงาน)
+-- ==========================================
+local function startSellRoutine()
+    task.spawn(function()
+        local timer = _G.SellDelay 
+        while _G.AutoSellActive do
+            if timer >= _G.SellDelay then
+                timer = 0
+                _G.IsSellingNow = true 
+                task.wait(1)
+                
+                local myPlatform = getBasePlatform()
+                if myPlatform then
+                    local spawnPad = myPlatform:FindFirstChild("SpawnPad")
+                    if spawnPad then
+                        slideTo(spawnPad.CFrame + Vector3.new(0, 3, 0), 80)
+                    end
+                    
+                    for i = 1, 55 do
+                        pcall(function() OreEvent:FireServer({dockIndex = i}) end)
+                        task.wait(0.05)
+                    end
+                    task.wait(0.5)
+                    
+                    local sellPrompt = getBaseSellPrompt()
+                    if sellPrompt and sellPrompt.Parent then
+                        slideTo(sellPrompt.Parent.CFrame, 80)
+                        task.wait(0.5)
+                        pcall(function()
+                            if fireproximityprompt then
+                                fireproximityprompt(sellPrompt)
+                            else
+                                sellPrompt:InputHoldBegin()
+                                task.wait(sellPrompt.HoldDuration + 0.1)
+                                sellPrompt:InputHoldEnd()
+                            end
+                        end)
+                    end
+                end
+                _G.IsSellingNow = false 
+            else
+                task.wait(1)
+                timer = timer + 1
+            end
+        end
+    end)
+end
+
+local function startEventRoutine()
+    task.spawn(function()
+        while _G.AutoEventActive do
+            if _G.IsSellingNow then
+                task.wait(1)
+            else
+                local rootPart = Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if rootPart then
+                    local targetDrop = getClosestEventDrop(rootPart.Position)
+                    if targetDrop and targetDrop.Parent then
+                        slideTo(targetDrop.CFrame + Vector3.new(0, 2, 0), 80)
+                        task.wait(0.3)
+                    else
+                        task.wait(1)
+                    end
+                else
+                    task.wait(1)
+                end
+            end
+        end
+    end)
+end
+
+Players.LocalPlayer.Idled:Connect(function()
+    if _G.AntiAFKActive then
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end
+end)
+
+-- ==========================================
+-- 5. EVENT LISTENERS (ระบบแอนิเมชันและคลิก)
+-- ==========================================
+
+-- ฟังก์ชันเปลี่ยนสีปุ่มแบบสมูท
+local function tweenButtonStatus(btn, isActive, textOn, textOff)
+    local targetColor = isActive and Color3.fromRGB(65, 200, 100) or Color3.fromRGB(255, 75, 75)
+    btn.Text = isActive and " 🟢 " .. textOn or " 🔴 " .. textOff
+    TweenService:Create(btn, TweenInfo.new(0.3), {BackgroundColor3 = targetColor}):Play()
+end
+
+-- ระบบย่อหน้าจอ (Minimize)
+MinBtn.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    local targetSize = isMinimized and minSize or fullSize
+    MinBtn.Text = isMinimized and "+" or "–"
+    TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = targetSize}):Play()
+end)
+
+-- ปุ่ม 1
+SellToggle.MouseButton1Click:Connect(function()
+    _G.AutoSellActive = not _G.AutoSellActive
+    tweenButtonStatus(SellToggle, _G.AutoSellActive, "1. Auto Sell (ON)", "1. Auto Sell")
+    if _G.AutoSellActive then
+        _G.IsSellingNow = false
+        startSellRoutine()
+    end
+end)
+
+-- ปุ่ม 2
+EventToggle.MouseButton1Click:Connect(function()
+    _G.AutoEventActive = not _G.AutoEventActive
+    tweenButtonStatus(EventToggle, _G.AutoEventActive, "2. Auto Event (ON)", "2. Auto EventDrop")
+    if _G.AutoEventActive then
+        startEventRoutine()
+    end
+end)
+
+-- ปุ่ม 3
+AfkToggle.MouseButton1Click:Connect(function()
+    _G.AntiAFKActive = not _G.AntiAFKActive
+    tweenButtonStatus(AfkToggle, _G.AntiAFKActive, "3. Anti-AFK (ON)", "3. Anti-AFK")
+end)
+
+print("✅ โหลด UI สไตล์ Modern สำเร็จแล้ว!")
