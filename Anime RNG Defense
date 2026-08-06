@@ -1,5 +1,5 @@
 -- ==========================================
--- 🌟 Auto Portal Hub V.26 (Equip Best Toggle)
+-- 🌟 Auto Portal Hub V.29 (Alt Auto Place Edition)
 -- ==========================================
 local CoreGui = game:GetService("CoreGui")
 local TweenService = game:GetService("TweenService")
@@ -21,11 +21,11 @@ if isfolder and makefolder and not isfolder(folderName) then
     makefolder(folderName)
 end
 
--- ตัวแปรโหมดการวางตัว ("EquipBest" หรือ "Preset")
 _G.PlaceMode = "EquipBest"
 _G.IsRecording = false
 _G.CurrentTeam = "Team1"
 _G.TeamsData = { Team1 = {}, Team2 = {}, Team3 = {} }
+_G.StartDelay = 3 
 
 local function loadPresetsFromFile()
     if readfile and isfile and isfile(folderName .. "/presets.json") then
@@ -61,6 +61,7 @@ local selectedRankIndex = 2
 
 _G.AutoPortal = false
 _G.AutoPlace = false
+_G.AutoJoin = false
 
 -- ==========================================
 -- 🎨 สร้างหน้าต่าง GUI
@@ -70,7 +71,7 @@ ScreenGui.Name = "AutoPortalHub"
 ScreenGui.Parent = CoreGui
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-local fullSize = UDim2.new(0, 250, 0, 310) -- ขยายความสูงรองรับปุ่ม Mode
+local fullSize = UDim2.new(0, 250, 0, 375)
 local minSize = UDim2.new(0, 250, 0, 40)
 local isMinimized = false
 
@@ -84,7 +85,7 @@ TopBar.Parent = MainFrame; TopBar.Size = UDim2.new(1, 0, 0, 40); TopBar.Backgrou
 local TopCorner = Instance.new("UICorner"); TopCorner.CornerRadius = UDim.new(0, 8); TopCorner.Parent = TopBar
 
 local Title = Instance.new("TextLabel")
-Title.Parent = TopBar; Title.Size = UDim2.new(1, -50, 1, 0); Title.Position = UDim2.new(0, 15, 0, 0); Title.BackgroundTransparency = 1; Title.Text = "🌀 Auto Portal V.26 (Equip Best)"
+Title.Parent = TopBar; Title.Size = UDim2.new(1, -50, 1, 0); Title.Position = UDim2.new(0, 15, 0, 0); Title.BackgroundTransparency = 1; Title.Text = "🌀 Auto Portal V.29 (Alt Place)"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255); Title.TextSize = 12; Title.Font = Enum.Font.GothamBold; Title.TextXAlignment = Enum.TextXAlignment.Left
 
 local MinBtn = Instance.new("TextButton")
@@ -107,37 +108,50 @@ PlaceBtn.Parent = Content; PlaceBtn.Size = UDim2.new(1, -30, 0, 28); PlaceBtn.Po
 PlaceBtn.BackgroundColor3 = Color3.fromRGB(255, 75, 75); PlaceBtn.Text = "🔴 Auto Place: OFF"; PlaceBtn.TextColor3 = Color3.fromRGB(255, 255, 255); PlaceBtn.TextSize = 12; PlaceBtn.Font = Enum.Font.GothamBold
 local PlaceCorner = Instance.new("UICorner"); PlaceCorner.CornerRadius = UDim.new(0, 6); PlaceCorner.Parent = PlaceBtn
 
--- ⚙️ ปุ่มเลือกโหมดการวางตัว (Equip Best / Preset Team)
+-- 🔵 ปุ่ม Auto Join
+local JoinBtn = Instance.new("TextButton")
+JoinBtn.Parent = Content; JoinBtn.Size = UDim2.new(1, -30, 0, 28); JoinBtn.Position = UDim2.new(0, 15, 0, 72)
+JoinBtn.BackgroundColor3 = Color3.fromRGB(255, 75, 75); JoinBtn.Text = "🔴 Auto Join: OFF"; JoinBtn.TextColor3 = Color3.fromRGB(255, 255, 255); JoinBtn.TextSize = 12; JoinBtn.Font = Enum.Font.GothamBold
+local JoinCorner = Instance.new("UICorner"); JoinCorner.CornerRadius = UDim.new(0, 6); JoinCorner.Parent = JoinBtn
+
+-- ⏳ ปุ่มตั้งเวลารอก่อนกดเริ่ม (Start Delay)
+local DelayBtn = Instance.new("TextButton")
+DelayBtn.Parent = Content; DelayBtn.Size = UDim2.new(1, -30, 0, 28); DelayBtn.Position = UDim2.new(0, 15, 0, 104)
+DelayBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 100); DelayBtn.Text = "⏳ Start Delay: " .. _G.StartDelay .. "s"
+DelayBtn.TextColor3 = Color3.fromRGB(255, 220, 120); DelayBtn.TextSize = 12; DelayBtn.Font = Enum.Font.GothamBold
+local DelayCorner = Instance.new("UICorner"); DelayCorner.CornerRadius = UDim.new(0, 6); DelayCorner.Parent = DelayBtn
+
+-- ⚙️ ปุ่มเลือกโหมดการวางตัว
 local ModeBtn = Instance.new("TextButton")
-ModeBtn.Parent = Content; ModeBtn.Size = UDim2.new(1, -30, 0, 28); ModeBtn.Position = UDim2.new(0, 15, 0, 72)
+ModeBtn.Parent = Content; ModeBtn.Size = UDim2.new(1, -30, 0, 28); ModeBtn.Position = UDim2.new(0, 15, 0, 136)
 ModeBtn.BackgroundColor3 = Color3.fromRGB(80, 50, 120); ModeBtn.Text = "⚙️ Mode: Equip Best"
 ModeBtn.TextColor3 = Color3.fromRGB(220, 180, 255); ModeBtn.TextSize = 12; ModeBtn.Font = Enum.Font.GothamBold
 local ModeCorner = Instance.new("UICorner"); ModeCorner.CornerRadius = UDim.new(0, 6); ModeCorner.Parent = ModeBtn
 
 -- 🎯 ปุ่มเลือก Rank
 local RankBtn = Instance.new("TextButton")
-RankBtn.Parent = Content; RankBtn.Size = UDim2.new(1, -30, 0, 28); RankBtn.Position = UDim2.new(0, 15, 0, 104)
+RankBtn.Parent = Content; RankBtn.Size = UDim2.new(1, -30, 0, 28); RankBtn.Position = UDim2.new(0, 15, 0, 168)
 RankBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70); RankBtn.Text = "🎯 Rank: " .. allPortals[selectedRankIndex]
 RankBtn.TextColor3 = Color3.fromRGB(255, 220, 100); RankBtn.TextSize = 12; RankBtn.Font = Enum.Font.GothamBold
 local RankCorner = Instance.new("UICorner"); RankCorner.CornerRadius = UDim.new(0, 6); RankCorner.Parent = RankBtn
 
 -- 📁 ปุ่มเลือกทีม Preset
 local TeamBtn = Instance.new("TextButton")
-TeamBtn.Parent = Content; TeamBtn.Size = UDim2.new(1, -30, 0, 28); TeamBtn.Position = UDim2.new(0, 15, 0, 136)
+TeamBtn.Parent = Content; TeamBtn.Size = UDim2.new(1, -30, 0, 28); TeamBtn.Position = UDim2.new(0, 15, 0, 200)
 TeamBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 90); TeamBtn.Text = "📁 Preset: " .. _G.CurrentTeam
 TeamBtn.TextColor3 = Color3.fromRGB(100, 220, 255); TeamBtn.TextSize = 12; TeamBtn.Font = Enum.Font.GothamBold
 local TeamCorner = Instance.new("UICorner"); TeamCorner.CornerRadius = UDim.new(0, 6); TeamCorner.Parent = TeamBtn
 
 -- 🎙️ ปุ่มอัดตำแหน่ง
 local RecordBtn = Instance.new("TextButton")
-RecordBtn.Parent = Content; RecordBtn.Size = UDim2.new(1, -30, 0, 28); RecordBtn.Position = UDim2.new(0, 15, 0, 168)
+RecordBtn.Parent = Content; RecordBtn.Size = UDim2.new(1, -30, 0, 28); RecordBtn.Position = UDim2.new(0, 15, 0, 232)
 RecordBtn.BackgroundColor3 = Color3.fromRGB(200, 120, 30); RecordBtn.Text = "🎙️ Start Record Placement"
 RecordBtn.TextColor3 = Color3.fromRGB(255, 255, 255); RecordBtn.TextSize = 12; RecordBtn.Font = Enum.Font.GothamBold
 local RecordCorner = Instance.new("UICorner"); RecordCorner.CornerRadius = UDim.new(0, 6); RecordCorner.Parent = RecordBtn
 
 -- Status Label
 local StatusLabel = Instance.new("TextLabel")
-StatusLabel.Parent = Content; StatusLabel.Size = UDim2.new(1, -30, 0, 20); StatusLabel.Position = UDim2.new(0, 15, 0, 202)
+StatusLabel.Parent = Content; StatusLabel.Size = UDim2.new(1, -30, 0, 20); StatusLabel.Position = UDim2.new(0, 15, 0, 268)
 StatusLabel.BackgroundTransparency = 1; StatusLabel.Text = "Status: Waiting..."; StatusLabel.TextColor3 = Color3.fromRGB(150, 150, 150); StatusLabel.TextSize = 11; StatusLabel.Font = Enum.Font.GothamSemibold; StatusLabel.TextXAlignment = Enum.TextXAlignment.Center
 
 -- ==========================================
@@ -150,7 +164,14 @@ MinBtn.MouseButton1Click:Connect(function()
     TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = targetSize}):Play()
 end)
 
--- ปุ่มสลับโหมดการวางตัว
+DelayBtn.MouseButton1Click:Connect(function()
+    _G.StartDelay = _G.StartDelay + 1
+    if _G.StartDelay > 5 then
+        _G.StartDelay = 1
+    end
+    DelayBtn.Text = "⏳ Start Delay: " .. _G.StartDelay .. "s"
+end)
+
 ModeBtn.MouseButton1Click:Connect(function()
     if _G.PlaceMode == "EquipBest" then
         _G.PlaceMode = "Preset"
@@ -197,7 +218,6 @@ RankBtn.MouseButton1Click:Connect(function()
     RankBtn.Text = "🎯 Rank: " .. allPortals[selectedRankIndex]
 end)
 
--- 🔍 ฟังก์ชันเช็คด่าน Solo Island
 local function isSoloIsland()
     for _, gui in pairs(player.PlayerGui:GetDescendants()) do
         if gui.Name == "MapName" and gui:IsA("TextLabel") then
@@ -235,10 +255,8 @@ local function checkNegativeWindDebuff()
     return windValue
 end
 
--- 🌟 ฟังก์ชันวางตัวแยกตามโหมดที่เลือก
 local function executePlacements()
     if _G.PlaceMode == "EquipBest" then
-        -- โหมดที่ 1: ใช้ EquipBestTowers
         pcall(function()
             local equipRemote = rs:WaitForChild("Remotes", 3):WaitForChild("Towers", 3):WaitForChild("EquipBestTowers", 3)
             if equipRemote then
@@ -246,7 +264,6 @@ local function executePlacements()
             end
         end)
     else
-        -- โหมดที่ 2: วางตามตำแหน่ง Preset ในไฟล์
         local placeRemote = rs:WaitForChild("Remotes", 5)
         if placeRemote then placeRemote = placeRemote:WaitForChild("Towers", 5)
             if placeRemote then placeRemote = placeRemote:WaitForChild("PlaceTower", 5) end
@@ -339,7 +356,7 @@ local function clickStart()
 end
 
 -- ==========================================
--- 🔄 ลูปการทำงานหลัก
+-- 🔄 ลูปการทำงานหลัก (Auto Portal / Auto Place)
 -- ==========================================
 local function autoPortalLoop()
     task.spawn(function()
@@ -383,6 +400,12 @@ local function autoPortalLoop()
 
                     pcall(function() activateRemote:InvokeServer(uuid) end)
 
+                    for i = _G.StartDelay, 1, -1 do
+                        StatusLabel.Text = "Waiting Alt Join: " .. i .. "s..."
+                        StatusLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
+                        task.wait(1)
+                    end
+
                     StatusLabel.Text = "Clicking Start (1)..."
                     clickStart()
                     task.wait(5)
@@ -403,6 +426,85 @@ local function autoPortalLoop()
     end)
 end
 
+-- ==========================================
+-- 🔵 ลูปการทำงาน Auto Join + Auto Place (สำหรับไอดีรอง)
+-- ==========================================
+local function autoJoinLoop()
+    task.spawn(function()
+        local hasPlacedTowersAlt = false
+
+        while _G.AutoJoin do
+            if isSoloIsland() then
+                StatusLabel.Text = "In Match: Solo Island"
+                StatusLabel.TextColor3 = Color3.fromRGB(255, 170, 0)
+
+                -- 🌟 เพิ่มระบบวางตัวสำหรับไอดีรอง (Alt Account)
+                if _G.AutoPlace and not hasPlacedTowersAlt then
+                    if _G.PlaceMode == "EquipBest" then
+                        StatusLabel.Text = "Alt: Equipping Best Towers..."
+                    else
+                        StatusLabel.Text = "Alt: Placing Towers (" .. _G.CurrentTeam .. ")..."
+                    end
+                    StatusLabel.TextColor3 = Color3.fromRGB(255, 150, 255)
+
+                    executePlacements()
+                    hasPlacedTowersAlt = true
+                end
+                task.wait(2)
+            else
+                hasPlacedTowersAlt = false -- รีเซ็ตเมื่อย้อนกลับมาล็อบบี้
+
+                pcall(function()
+                    local char = player.Character or player.CharacterAdded:Wait()
+                    local hrp = char:FindFirstChild("HumanoidRootPart")
+
+                    for _, prompt in pairs(workspace:GetDescendants()) do
+                        if prompt:IsA("ProximityPrompt") and _G.AutoJoin then
+                            local actionText = string.lower(prompt.ActionText or "")
+                            local objectText = string.lower(prompt.ObjectText or "")
+                            local parentName = string.lower(prompt.Parent and prompt.Parent.Name or "")
+
+                            if string.find(actionText, "join") or string.find(actionText, "portal") or 
+                               string.find(objectText, "portal") or string.find(parentName, "portal") then
+
+                                local parentPart = prompt.Parent:IsA("BasePart") and prompt.Parent or prompt.Parent:FindFirstChildWhichIsA("BasePart")
+
+                                if hrp and parentPart then
+                                    StatusLabel.Text = "Joining Portal..."
+                                    StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 255)
+
+                                    hrp.CFrame = parentPart.CFrame * CFrame.new(0, 0, -2)
+                                    task.wait(0.1)
+
+                                    if fireproximityprompt then
+                                        fireproximityprompt(prompt)
+                                    end
+
+                                    local touch = parentPart:FindFirstChildOfClass("TouchTransmitter") or parentPart:FindFirstChild("TouchInterest")
+                                    if touch then
+                                        firetouchinterest(hrp, parentPart, 0)
+                                        task.wait(0.1)
+                                        firetouchinterest(hrp, parentPart, 1)
+                                    end
+
+                                    task.wait(3)
+                                end
+                            end
+                        end
+                    end
+                end)
+                task.wait(0.5)
+            end
+        end
+
+        StatusLabel.Text = "Status: Idle"
+        StatusLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+    end)
+end
+
+-- ==========================================
+-- 🔘 การควบคุมปุ่มกด
+-- ==========================================
 PortalBtn.MouseButton1Click:Connect(function()
     _G.AutoPortal = not _G.AutoPortal
     if _G.AutoPortal then
@@ -426,4 +528,16 @@ PlaceBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-print("✅ โหลด Auto Portal Hub V.26 สำเร็จ! (เพิ่มปุ่มสลับโหมด Equip Best / Preset Team)")
+JoinBtn.MouseButton1Click:Connect(function()
+    _G.AutoJoin = not _G.AutoJoin
+    if _G.AutoJoin then
+        JoinBtn.Text = "🟢 Auto Join: ON"
+        TweenService:Create(JoinBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(65, 200, 100)}):Play()
+        autoJoinLoop()
+    else
+        JoinBtn.Text = "🔴 Auto Join: OFF"
+        TweenService:Create(JoinBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 75, 75)}):Play()
+    end
+end)
+
+print("✅ โหลด Auto Portal Hub V.29 สำเร็จ! (รองรับ Auto Place/Equip Best สำหรับไอดีรอง Auto Join)")
