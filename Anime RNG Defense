@@ -1,30 +1,63 @@
 -- ==========================================
--- 🌟 Auto Portal Hub V.22 (Equip Best Towers Edition)
+-- 🌟 Auto Portal Hub V.26 (Equip Best Toggle)
 -- ==========================================
 local CoreGui = game:GetService("CoreGui")
 local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
 local rs = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
 
 local activateRemote = rs:WaitForChild("Remotes"):WaitForChild("Inventory"):WaitForChild("ActivateCoopPortal")
 
--- ลบ UI เก่าทิ้งถ้ามีค้างอยู่
 if CoreGui:FindFirstChild("AutoPortalHub") then
     CoreGui.AutoPortalHub:Destroy()
 end
 
--- รายการพอร์ทัลทั้งหมด เรียงจากสูงไปต่ำ
-local allPortals = {
-    "S-Rank Portal",
-    "A-Rank Portal",
-    "B-Rank Portal",
-    "C-Rank Portal",
-    "D-Rank Portal",
-    "E-Rank Portal"
-}
+local maxAllowedWindDebuff = 60 
 
-local selectedRankIndex = 2 -- ค่าเริ่มต้น: A-Rank Portal
+local folderName = "AutoPortal_Presets"
+if isfolder and makefolder and not isfolder(folderName) then
+    makefolder(folderName)
+end
+
+-- ตัวแปรโหมดการวางตัว ("EquipBest" หรือ "Preset")
+_G.PlaceMode = "EquipBest"
+_G.IsRecording = false
+_G.CurrentTeam = "Team1"
+_G.TeamsData = { Team1 = {}, Team2 = {}, Team3 = {} }
+
+local function loadPresetsFromFile()
+    if readfile and isfile and isfile(folderName .. "/presets.json") then
+        pcall(function()
+            local json = readfile(folderName .. "/presets.json")
+            _G.TeamsData = HttpService:JSONDecode(json)
+        end)
+    end
+end
+loadPresetsFromFile()
+
+local function savePresetsToFile()
+    if writefile then
+        pcall(function()
+            local json = HttpService:JSONEncode(_G.TeamsData)
+            writefile(folderName .. "/presets.json", json)
+        end)
+    end
+end
+
+local rawNamecall
+rawNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
+    if _G.IsRecording and (method == "FireServer" or method == "InvokeServer") and self.Name == "PlaceTower" then
+        table.insert(_G.TeamsData[_G.CurrentTeam], args)
+    end
+    return rawNamecall(self, ...)
+end))
+
+local allPortals = {"S-Rank Portal", "A-Rank Portal", "B-Rank Portal", "C-Rank Portal", "D-Rank Portal", "E-Rank Portal"}
+local selectedRankIndex = 2
 
 _G.AutoPortal = false
 _G.AutoPlace = false
@@ -37,7 +70,7 @@ ScreenGui.Name = "AutoPortalHub"
 ScreenGui.Parent = CoreGui
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-local fullSize = UDim2.new(0, 250, 0, 195)
+local fullSize = UDim2.new(0, 250, 0, 310) -- ขยายความสูงรองรับปุ่ม Mode
 local minSize = UDim2.new(0, 250, 0, 40)
 local isMinimized = false
 
@@ -49,46 +82,66 @@ local MainCorner = Instance.new("UICorner"); MainCorner.CornerRadius = UDim.new(
 local TopBar = Instance.new("Frame")
 TopBar.Parent = MainFrame; TopBar.Size = UDim2.new(1, 0, 0, 40); TopBar.BackgroundColor3 = Color3.fromRGB(15, 15, 20); TopBar.BorderSizePixel = 0
 local TopCorner = Instance.new("UICorner"); TopCorner.CornerRadius = UDim.new(0, 8); TopCorner.Parent = TopBar
-local TopFix = Instance.new("Frame"); TopFix.Parent = TopBar; TopFix.Size = UDim2.new(1, 0, 0, 10); TopFix.Position = UDim2.new(0, 0, 1, -10); TopFix.BackgroundColor3 = Color3.fromRGB(15, 15, 20); TopFix.BorderSizePixel = 0
 
 local Title = Instance.new("TextLabel")
-Title.Parent = TopBar; Title.Size = UDim2.new(1, -50, 1, 0); Title.Position = UDim2.new(0, 15, 0, 0); Title.BackgroundTransparency = 1; Title.Text = "🌀 Auto Portal Hub V.22"
-Title.TextColor3 = Color3.fromRGB(255, 255, 255); Title.TextSize = 14; Title.Font = Enum.Font.GothamBold; Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = TopBar; Title.Size = UDim2.new(1, -50, 1, 0); Title.Position = UDim2.new(0, 15, 0, 0); Title.BackgroundTransparency = 1; Title.Text = "🌀 Auto Portal V.26 (Equip Best)"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255); Title.TextSize = 12; Title.Font = Enum.Font.GothamBold; Title.TextXAlignment = Enum.TextXAlignment.Left
 
 local MinBtn = Instance.new("TextButton")
 MinBtn.Parent = TopBar; MinBtn.Size = UDim2.new(0, 30, 0, 24); MinBtn.Position = UDim2.new(1, -40, 0, 8)
-MinBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 45); MinBtn.Text = "–"; MinBtn.TextColor3 = Color3.fromRGB(255, 255, 255); MinBtn.TextSize = 16; MinBtn.Font = Enum.Font.GothamBold
+MinBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 45); MinBtn.Text = "–"; MinBtn.TextColor3 = Color3.fromRGB(255, 255, 255); MinBtn.Font = Enum.Font.GothamBold
 local MinCorner = Instance.new("UICorner"); MinCorner.CornerRadius = UDim.new(0, 4); MinCorner.Parent = MinBtn
 
 local Content = Instance.new("Frame")
 Content.Parent = MainFrame; Content.Size = UDim2.new(1, 0, 1, -40); Content.Position = UDim2.new(0, 0, 0, 40); Content.BackgroundTransparency = 1
 
--- ปุ่ม Auto Portal
+-- 🟢 ปุ่ม Auto Portal
 local PortalBtn = Instance.new("TextButton")
-PortalBtn.Parent = Content; PortalBtn.Size = UDim2.new(1, -30, 0, 30); PortalBtn.Position = UDim2.new(0, 15, 0, 10)
-PortalBtn.BackgroundColor3 = Color3.fromRGB(255, 75, 75); PortalBtn.Text = "🔴 Auto Portal: OFF"; PortalBtn.TextColor3 = Color3.fromRGB(255, 255, 255); PortalBtn.TextSize = 13; PortalBtn.Font = Enum.Font.GothamBold
+PortalBtn.Parent = Content; PortalBtn.Size = UDim2.new(1, -30, 0, 28); PortalBtn.Position = UDim2.new(0, 15, 0, 8)
+PortalBtn.BackgroundColor3 = Color3.fromRGB(255, 75, 75); PortalBtn.Text = "🔴 Auto Portal: OFF"; PortalBtn.TextColor3 = Color3.fromRGB(255, 255, 255); PortalBtn.TextSize = 12; PortalBtn.Font = Enum.Font.GothamBold
 local PortalCorner = Instance.new("UICorner"); PortalCorner.CornerRadius = UDim.new(0, 6); PortalCorner.Parent = PortalBtn
 
--- ปุ่ม Auto Place (Equip Best)
+-- 🟢 ปุ่ม Auto Place
 local PlaceBtn = Instance.new("TextButton")
-PlaceBtn.Parent = Content; PlaceBtn.Size = UDim2.new(1, -30, 0, 30); PlaceBtn.Position = UDim2.new(0, 15, 0, 46)
-PlaceBtn.BackgroundColor3 = Color3.fromRGB(255, 75, 75); PlaceBtn.Text = "🔴 Auto Place: OFF"; PlaceBtn.TextColor3 = Color3.fromRGB(255, 255, 255); PlaceBtn.TextSize = 13; PlaceBtn.Font = Enum.Font.GothamBold
+PlaceBtn.Parent = Content; PlaceBtn.Size = UDim2.new(1, -30, 0, 28); PlaceBtn.Position = UDim2.new(0, 15, 0, 40)
+PlaceBtn.BackgroundColor3 = Color3.fromRGB(255, 75, 75); PlaceBtn.Text = "🔴 Auto Place: OFF"; PlaceBtn.TextColor3 = Color3.fromRGB(255, 255, 255); PlaceBtn.TextSize = 12; PlaceBtn.Font = Enum.Font.GothamBold
 local PlaceCorner = Instance.new("UICorner"); PlaceCorner.CornerRadius = UDim.new(0, 6); PlaceCorner.Parent = PlaceBtn
 
--- ปุ่มเลือก Rank เริ่มต้น
+-- ⚙️ ปุ่มเลือกโหมดการวางตัว (Equip Best / Preset Team)
+local ModeBtn = Instance.new("TextButton")
+ModeBtn.Parent = Content; ModeBtn.Size = UDim2.new(1, -30, 0, 28); ModeBtn.Position = UDim2.new(0, 15, 0, 72)
+ModeBtn.BackgroundColor3 = Color3.fromRGB(80, 50, 120); ModeBtn.Text = "⚙️ Mode: Equip Best"
+ModeBtn.TextColor3 = Color3.fromRGB(220, 180, 255); ModeBtn.TextSize = 12; ModeBtn.Font = Enum.Font.GothamBold
+local ModeCorner = Instance.new("UICorner"); ModeCorner.CornerRadius = UDim.new(0, 6); ModeCorner.Parent = ModeBtn
+
+-- 🎯 ปุ่มเลือก Rank
 local RankBtn = Instance.new("TextButton")
-RankBtn.Parent = Content; RankBtn.Size = UDim2.new(1, -30, 0, 30); RankBtn.Position = UDim2.new(0, 15, 0, 82)
-RankBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70); RankBtn.Text = "🎯 Start: " .. allPortals[selectedRankIndex]
+RankBtn.Parent = Content; RankBtn.Size = UDim2.new(1, -30, 0, 28); RankBtn.Position = UDim2.new(0, 15, 0, 104)
+RankBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70); RankBtn.Text = "🎯 Rank: " .. allPortals[selectedRankIndex]
 RankBtn.TextColor3 = Color3.fromRGB(255, 220, 100); RankBtn.TextSize = 12; RankBtn.Font = Enum.Font.GothamBold
 local RankCorner = Instance.new("UICorner"); RankCorner.CornerRadius = UDim.new(0, 6); RankCorner.Parent = RankBtn
 
+-- 📁 ปุ่มเลือกทีม Preset
+local TeamBtn = Instance.new("TextButton")
+TeamBtn.Parent = Content; TeamBtn.Size = UDim2.new(1, -30, 0, 28); TeamBtn.Position = UDim2.new(0, 15, 0, 136)
+TeamBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 90); TeamBtn.Text = "📁 Preset: " .. _G.CurrentTeam
+TeamBtn.TextColor3 = Color3.fromRGB(100, 220, 255); TeamBtn.TextSize = 12; TeamBtn.Font = Enum.Font.GothamBold
+local TeamCorner = Instance.new("UICorner"); TeamCorner.CornerRadius = UDim.new(0, 6); TeamCorner.Parent = TeamBtn
+
+-- 🎙️ ปุ่มอัดตำแหน่ง
+local RecordBtn = Instance.new("TextButton")
+RecordBtn.Parent = Content; RecordBtn.Size = UDim2.new(1, -30, 0, 28); RecordBtn.Position = UDim2.new(0, 15, 0, 168)
+RecordBtn.BackgroundColor3 = Color3.fromRGB(200, 120, 30); RecordBtn.Text = "🎙️ Start Record Placement"
+RecordBtn.TextColor3 = Color3.fromRGB(255, 255, 255); RecordBtn.TextSize = 12; RecordBtn.Font = Enum.Font.GothamBold
+local RecordCorner = Instance.new("UICorner"); RecordCorner.CornerRadius = UDim.new(0, 6); RecordCorner.Parent = RecordBtn
+
 -- Status Label
 local StatusLabel = Instance.new("TextLabel")
-StatusLabel.Parent = Content; StatusLabel.Size = UDim2.new(1, -30, 0, 20); StatusLabel.Position = UDim2.new(0, 15, 0, 120)
-StatusLabel.BackgroundTransparency = 1; StatusLabel.Text = "Status: Waiting..."; StatusLabel.TextColor3 = Color3.fromRGB(150, 150, 150); StatusLabel.TextSize = 12; StatusLabel.Font = Enum.Font.GothamSemibold; StatusLabel.TextXAlignment = Enum.TextXAlignment.Center
+StatusLabel.Parent = Content; StatusLabel.Size = UDim2.new(1, -30, 0, 20); StatusLabel.Position = UDim2.new(0, 15, 0, 202)
+StatusLabel.BackgroundTransparency = 1; StatusLabel.Text = "Status: Waiting..."; StatusLabel.TextColor3 = Color3.fromRGB(150, 150, 150); StatusLabel.TextSize = 11; StatusLabel.Font = Enum.Font.GothamSemibold; StatusLabel.TextXAlignment = Enum.TextXAlignment.Center
 
 -- ==========================================
--- ⚙️ ระบบการทำงาน (Logic)
+-- ⚙️ ระบบการทำงานปุ่ม
 -- ==========================================
 MinBtn.MouseButton1Click:Connect(function()
     isMinimized = not isMinimized
@@ -97,117 +150,185 @@ MinBtn.MouseButton1Click:Connect(function()
     TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = targetSize}):Play()
 end)
 
+-- ปุ่มสลับโหมดการวางตัว
+ModeBtn.MouseButton1Click:Connect(function()
+    if _G.PlaceMode == "EquipBest" then
+        _G.PlaceMode = "Preset"
+        ModeBtn.Text = "⚙️ Mode: Preset Team"
+        ModeBtn.BackgroundColor3 = Color3.fromRGB(50, 100, 120)
+    else
+        _G.PlaceMode = "EquipBest"
+        ModeBtn.Text = "⚙️ Mode: Equip Best"
+        ModeBtn.BackgroundColor3 = Color3.fromRGB(80, 50, 120)
+    end
+end)
+
+TeamBtn.MouseButton1Click:Connect(function()
+    if _G.CurrentTeam == "Team1" then _G.CurrentTeam = "Team2"
+    elseif _G.CurrentTeam == "Team2" then _G.CurrentTeam = "Team3"
+    else _G.CurrentTeam = "Team1" end
+    
+    local count = #(_G.TeamsData[_G.CurrentTeam] or {})
+    TeamBtn.Text = "📁 Preset: " .. _G.CurrentTeam .. " (" .. count .. " towers)"
+end)
+
+RecordBtn.MouseButton1Click:Connect(function()
+    _G.IsRecording = not _G.IsRecording
+    if _G.IsRecording then
+        _G.TeamsData[_G.CurrentTeam] = {}
+        RecordBtn.Text = "⏹️ Stop & Save " .. _G.CurrentTeam
+        RecordBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        StatusLabel.Text = "Recording: Place towers now!"
+        StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+    else
+        savePresetsToFile()
+        local count = #(_G.TeamsData[_G.CurrentTeam] or {})
+        RecordBtn.Text = "🎙️ Start Record Placement"
+        RecordBtn.BackgroundColor3 = Color3.fromRGB(200, 120, 30)
+        TeamBtn.Text = "📁 Preset: " .. _G.CurrentTeam .. " (" .. count .. " towers)"
+        StatusLabel.Text = "Saved " .. count .. " towers to " .. _G.CurrentTeam
+        StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+    end
+end)
+
 RankBtn.MouseButton1Click:Connect(function()
     selectedRankIndex = selectedRankIndex + 1
-    if selectedRankIndex > #allPortals then
-        selectedRankIndex = 1
-    end
-    RankBtn.Text = "🎯 Start: " .. allPortals[selectedRankIndex]
+    if selectedRankIndex > #allPortals then selectedRankIndex = 1 end
+    RankBtn.Text = "🎯 Rank: " .. allPortals[selectedRankIndex]
 end)
+
+-- 🔍 ฟังก์ชันเช็คด่าน Solo Island
+local function isSoloIsland()
+    for _, gui in pairs(player.PlayerGui:GetDescendants()) do
+        if gui.Name == "MapName" and gui:IsA("TextLabel") then
+            local txt = string.lower(gui.Text or "")
+            if string.find(txt, "solo island") then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function checkNegativeWindDebuff()
+    local windValue = 0
+    pcall(function()
+        local hover = player.PlayerGui:FindFirstChild("HoverPortalClick")
+        if hover then
+            local elem = hover:FindFirstChild("Elemental")
+            if elem then
+                local scroll = elem:FindFirstChild("ScrollingFrame")
+                if scroll then
+                    local negWind = scroll:FindFirstChild("Negative_Wind")
+                    if negWind then
+                        local numLabel = negWind:FindFirstChild("Number")
+                        if numLabel and numLabel:IsA("TextLabel") then
+                            local text = numLabel.Text
+                            local extractedNum = string.match(text, "%d+")
+                            if extractedNum then windValue = tonumber(extractedNum) or 0 end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    return windValue
+end
+
+-- 🌟 ฟังก์ชันวางตัวแยกตามโหมดที่เลือก
+local function executePlacements()
+    if _G.PlaceMode == "EquipBest" then
+        -- โหมดที่ 1: ใช้ EquipBestTowers
+        pcall(function()
+            local equipRemote = rs:WaitForChild("Remotes", 3):WaitForChild("Towers", 3):WaitForChild("EquipBestTowers", 3)
+            if equipRemote then
+                equipRemote:InvokeServer()
+            end
+        end)
+    else
+        -- โหมดที่ 2: วางตามตำแหน่ง Preset ในไฟล์
+        local placeRemote = rs:WaitForChild("Remotes", 5)
+        if placeRemote then placeRemote = placeRemote:WaitForChild("Towers", 5)
+            if placeRemote then placeRemote = placeRemote:WaitForChild("PlaceTower", 5) end
+        end
+        
+        local currentPreset = _G.TeamsData[_G.CurrentTeam] or {}
+        if placeRemote and #currentPreset > 0 then
+            for loop = 1, 2 do
+                for _, args in ipairs(currentPreset) do
+                    pcall(function() placeRemote:FireServer(unpack(args)) end)
+                    task.wait(0.05)
+                end
+                task.wait(1)
+            end
+        end
+    end
+end
 
 local function getActivePriority()
     local activePriority = {}
-    for i = selectedRankIndex, #allPortals do
-        table.insert(activePriority, allPortals[i])
-    end
+    for i = selectedRankIndex, #allPortals do table.insert(activePriority, allPortals[i]) end
     return activePriority
 end
 
 local function forceLoadInventory()
     pcall(function()
-        local playerGui = player:FindFirstChild("PlayerGui")
-        if playerGui then
-            local drops = playerGui:FindFirstChild("Drops")
-            if drops then
-                local display = drops:FindFirstChild("Display")
-                if display then
-                    display.Visible = true
-                    task.wait(0.4)
-                    display.Visible = false
-                end
-            end
-        end
+        local display = player.PlayerGui.Drops.Display
+        display.Visible = true
+        task.wait(0.3)
+        display.Visible = false
     end)
 end
 
-local function getMapName()
-    for _, gui in pairs(player.PlayerGui:GetDescendants()) do
-        if gui.Name == "MapName" and gui:IsA("TextLabel") then
-            return gui.Text or ""
-        end
-    end
-    return ""
-end
-
 local function getBestPortalUUID()
-    local foundPortals = {}
     local activePriority = getActivePriority()
 
-    -- 1. สแกนจาก Memory
-    for _, obj in pairs(getgc(true)) do
-        if type(obj) == "table" then
-            pcall(function()
-                for key, val in pairs(obj) do
-                    if type(val) == "table" then
-                        local currentPortalName = nil
-                        for _, v in pairs(val) do
-                            if type(v) == "string" then
-                                for _, pName in ipairs(activePriority) do
-                                    if v == pName then currentPortalName = pName; break end
-                                end
-                            end
-                            if currentPortalName then break end
-                        end
-                        if currentPortalName and not foundPortals[currentPortalName] then
-                            if type(key) == "string" and #key >= 30 and string.find(key, "-") then
-                                foundPortals[currentPortalName] = key
-                            end
-                            for _, v in pairs(val) do
-                                if type(v) == "string" and #v >= 30 and string.find(v, "-") then
-                                    foundPortals[currentPortalName] = v; break
-                                end
-                            end
-                        end
-                    end
-                end
-            end)
-        end
-        if foundPortals[activePriority[1]] then break end 
-    end
-
-    -- 2. สแกนจาก UI DropVirtualItem หากใน Memory ไม่พบ
-    if not foundPortals[activePriority[1]] then
-        pcall(function()
-            local scroll = player.PlayerGui.Drops.Display.Frame.ScrollingFrame
-            for _, item in pairs(scroll:GetChildren()) do
-                if item.Name == "DropVirtualItem" then
-                    local content = item:FindFirstChild("Content")
-                    local nameLabel = content and content:FindFirstChild("Name")
-                    if nameLabel and nameLabel:IsA("TextLabel") then
-                        for _, pName in ipairs(activePriority) do
-                            if nameLabel.Text == pName and not foundPortals[pName] then
-                                for attrName, val in pairs(item:GetAttributes()) do
-                                    if type(val) == "string" and #val >= 30 and string.find(val, "-") then
-                                        foundPortals[pName] = val
-                                    end
-                                end
-                                for _, child in pairs(item:GetChildren()) do
-                                    if child:IsA("StringValue") and #child.Value >= 30 and string.find(child.Value, "-") then
-                                        foundPortals[pName] = child.Value
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end)
-    end
-
     for _, pName in ipairs(activePriority) do
-        if foundPortals[pName] then return foundPortals[pName], pName end
+        local candidateUUIDs = {}
+
+        for _, obj in pairs(getgc(true)) do
+            if type(obj) == "table" then
+                pcall(function()
+                    for key, val in pairs(obj) do
+                        if type(val) == "table" then
+                            local isMatch = false
+                            for _, v in pairs(val) do
+                                if v == pName then isMatch = true; break end
+                            end
+
+                            if isMatch then
+                                local windDebuff = val.Negative_Wind or val.WindDebuff or 0
+                                if type(windDebuff) == "string" then
+                                    windDebuff = tonumber(string.match(windDebuff, "%d+")) or 0
+                                end
+
+                                local uuid = nil
+                                if type(key) == "string" and #key >= 30 and string.find(key, "-") then uuid = key end
+                                for _, v in pairs(val) do
+                                    if type(v) == "string" and #v >= 30 and string.find(v, "-") then uuid = v; break end
+                                end
+
+                                if uuid then
+                                    table.insert(candidateUUIDs, {uuid = uuid, wind = windDebuff})
+                                end
+                            end
+                        end
+                    end
+                end)
+            end
+        end
+
+        for _, portalInfo in ipairs(candidateUUIDs) do
+            local uiWind = checkNegativeWindDebuff()
+            local finalWind = math.max(portalInfo.wind, uiWind)
+
+            if finalWind < maxAllowedWindDebuff then
+                return portalInfo.uuid, pName, finalWind
+            end
+        end
     end
-    return nil, nil
+
+    return nil, nil, 0
 end
 
 local function clickStart()
@@ -217,33 +338,25 @@ local function clickStart()
     end)
 end
 
--- 🌟 ปรับเปลี่ยนเป็น Remote ยิง EquipBestTowers
-local function executePlacements()
-    pcall(function()
-        local equipRemote = rs:WaitForChild("Remotes", 3):WaitForChild("Towers", 3):WaitForChild("EquipBestTowers", 3)
-        if equipRemote then
-            equipRemote:InvokeServer()
-        end
-    end)
-end
-
+-- ==========================================
+-- 🔄 ลูปการทำงานหลัก
+-- ==========================================
 local function autoPortalLoop()
     task.spawn(function()
         local hasPlacedTowers = false
 
         while _G.AutoPortal do
-            local currentMap = getMapName()
-            local mapLower = string.lower(currentMap)
-
-            -- ==========================================
-            -- ⚔️ 1. อยู่ในแมพ Solo Island
-            -- ==========================================
-            if string.find(mapLower, "solo island") then
+            if isSoloIsland() then
                 StatusLabel.Text = "In Match: Solo Island"
                 StatusLabel.TextColor3 = Color3.fromRGB(255, 170, 0)
 
                 if _G.AutoPlace and not hasPlacedTowers then
-                    StatusLabel.Text = "Equipping Best Towers..."
+                    if _G.PlaceMode == "EquipBest" then
+                        StatusLabel.Text = "Equipping Best Towers..."
+                    else
+                        StatusLabel.Text = "Placing Towers (" .. _G.CurrentTeam .. ")..."
+                    end
+                    
                     StatusLabel.TextColor3 = Color3.fromRGB(255, 150, 255)
                     executePlacements()
                     
@@ -253,41 +366,32 @@ local function autoPortalLoop()
                     
                     hasPlacedTowers = true
                 end
-
                 task.wait(2)
-
-            -- ==========================================
-            -- 🏠 2. อยู่ในแมพ Eisenbern Castle (Lobby)
-            -- ==========================================
             else
                 hasPlacedTowers = false 
 
                 StatusLabel.Text = "Loading Inventory..."
                 StatusLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
-                
                 forceLoadInventory()
 
-                StatusLabel.Text = "Lobby: Scanning Portals..."
-                local uuid, portalName = getBestPortalUUID()
+                StatusLabel.Text = "Scanning Portals..."
+                local uuid, portalName, windDebuff = getBestPortalUUID()
 
                 if uuid then
-                    StatusLabel.Text = "Found: " .. portalName
+                    StatusLabel.Text = "Found: " .. portalName .. " (-" .. windDebuff .. "%)"
                     StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
 
-                    pcall(function()
-                        activateRemote:InvokeServer(uuid)
-                    end)
-
-                    StatusLabel.Text = "Entering Dungeon..."
-                    StatusLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
-                    task.wait(7)
+                    pcall(function() activateRemote:InvokeServer(uuid) end)
 
                     StatusLabel.Text = "Clicking Start (1)..."
                     clickStart()
+                    task.wait(5)
 
+                    StatusLabel.Text = "Clicking Start (2)..."
+                    clickStart()
                     task.wait(3)
                 else
-                    StatusLabel.Text = "No Portals! Retrying..."
+                    StatusLabel.Text = "No Safe Portals! Retrying..."
                     StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
                     task.wait(3)
                 end
@@ -299,9 +403,6 @@ local function autoPortalLoop()
     end)
 end
 
--- ==========================================
--- 🔘 ควบคุมปุ่มกด
--- ==========================================
 PortalBtn.MouseButton1Click:Connect(function()
     _G.AutoPortal = not _G.AutoPortal
     if _G.AutoPortal then
@@ -325,4 +426,4 @@ PlaceBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-print("✅ โหลดหน้าต่าง Auto Portal Hub V.22 สำเร็จ! (เปลี่ยนเป็น EquipBestTowers เรียบร้อย)")
+print("✅ โหลด Auto Portal Hub V.26 สำเร็จ! (เพิ่มปุ่มสลับโหมด Equip Best / Preset Team)")
