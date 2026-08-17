@@ -1,11 +1,12 @@
 -- ==========================================
--- 🌟 Auto Portal Hub V.89 (Difficulty Selection)
+-- 🌟 Auto Portal Hub V.104 (Raid Escape Logic)
 -- ==========================================
 local CoreGui = game:GetService("CoreGui")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local VirtualUser = game:GetService("VirtualUser")
 local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
 local rs = game:GetService("ReplicatedStorage")
 local workspace = game:GetService("Workspace")
 local player = Players.LocalPlayer
@@ -17,37 +18,83 @@ for _, gui in pairs(CoreGui:GetChildren()) do
     end
 end
 
--- 🌟 แยกตัวแปร 3 โหมดอิสระ
-_G.PlaceModePortal = "TeamLoadout"; _G.AutoPlacePortal = false; _G.SelectedPortalTeam = 1 
+local activateRemote = rs:WaitForChild("Remotes", 5)
+if activateRemote then activateRemote = activateRemote:FindFirstChild("Inventory")
+    if activateRemote then activateRemote = activateRemote:FindFirstChild("ActivateCoopPortal") end
+end
+
+-- ==========================================
+-- 🌟 ตัวแปรการตั้งค่าทั้งหมด
+-- ==========================================
+local folderName = "AutoPortal_Presets"
+if isfolder and makefolder and not isfolder(folderName) then makefolder(folderName) end
+
+_G.IsRecording = false
+_G.CurrentTeam = "Team1"
+_G.TeamsData = { Team1 = {}, Team2 = {}, Team3 = {} }
+_G.PlaceModePortal = "EquipBest"
+_G.AutoPortal = false; _G.AutoPlacePortal = false; _G.AutoJoin = false
+_G.StartDelay = 3; _G.SelectedPortalTeam = 1
+
 _G.PlaceModeEvent = "TeamLoadout";  _G.AutoPlaceEvent = false;  _G.SelectedEventTeam = 1 
 _G.PlaceModeRaid = "TeamLoadout";   _G.AutoPlaceRaid = false;   _G.SelectedRaidTeam = 1 
 
--- 🌟 [ใหม่!] ตัวแปรเลือกระดับความยาก
 _G.EventDiffs = {"Easy", "Medium", "Hard", "VeryHard", "Extreme", "Nightmare"}
-_G.EventDiffIndex = 6 -- ค่าเริ่มต้นคือ Nightmare
-
+_G.EventDiffIndex = 6 
 _G.RaidDiffs = {"Easy", "Medium", "Hard", "Extreme"}
-_G.RaidDiffIndex = 4 -- ค่าเริ่มต้นคือ Extreme
+_G.RaidDiffIndex = 4 
 
-_G.StartDelay = 3 
-_G.CardSelectDelay = 2 
-_G.AutoPortal = false
-_G.AutoJoin = false
-_G.AutoSelectCard = false
-_G.AutoEvent = false
-_G.AutoRaid = false
-_G.AntiAFK = true 
+-- 🌍 ระบบเลือกรังหลบภัย (Escape Maps) สำหรับตอนอยู่ Raid แล้ว Event เปิด
+_G.EscapeMaps = {
+    { name = "Capsule Corp", value = "CapsuleCorp" },
+    { name = "Nomek", value = "Nomek" },
+    { name = "Leaf Village", value = "LeafVillage" },
+    { name = "Hollow World", value = "HollowWorld" },
+    { name = "Clover Village", value = "CloverVillage" },
+    { name = "Final Selection", value = "FinalSelection" },
+    { name = "Bizarre Town", value = "BizarreTown" },
+    { name = "Innovation City", value = "InnovationCity" },
+    { name = "Cursed High School", value = "CursedHighSchool" },
+    { name = "Fairy Forest", value = "FairyForest" },
+    { name = "Bull's Hideout", value = "BullsHideout" },
+    { name = "Eisenbern Castle", value = "EisenbernCastle" },
+    { name = "Vahrwelt", value = "Vahrwelt" }
+}
+_G.EscapeMapIndex = 1 -- ค่าเริ่มต้นคือ Capsule Corp
+
+_G.CardSelectDelay = 2; _G.AutoSelectCard = false
+_G.AutoEvent = false; _G.AutoRaid = false; _G.AntiAFK = true 
+_G.RaidSequenceDone = false 
 
 -- 🛡️ Anti-AFK
 player.Idled:Connect(function()
-    if _G.AntiAFK then
-        VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.new())
-    end
+    if _G.AntiAFK then VirtualUser:CaptureController(); VirtualUser:ClickButton2(Vector2.new()) end
 end)
 
+local maxAllowedWindDebuff = 60 
 local allPortals = {"S-Rank Portal", "A-Rank Portal", "B-Rank Portal", "C-Rank Portal", "D-Rank Portal", "E-Rank Portal"}
 local selectedRankIndex = 2
+
+-- 💾 ระบบ Load/Save Preset
+local function loadPresetsFromFile()
+    if readfile and isfile and isfile(folderName .. "/presets.json") then
+        pcall(function() _G.TeamsData = HttpService:JSONDecode(readfile(folderName .. "/presets.json")) end)
+    end
+end
+loadPresetsFromFile()
+
+local function savePresetsToFile()
+    if writefile then pcall(function() writefile(folderName .. "/presets.json", HttpService:JSONEncode(_G.TeamsData)) end) end
+end
+
+local rawNamecall
+rawNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    if _G.IsRecording and (method == "FireServer" or method == "InvokeServer") and self.Name == "PlaceTower" then
+        table.insert(_G.TeamsData[_G.CurrentTeam], {...})
+    end
+    return rawNamecall(self, ...)
+end))
 
 -- ==========================================
 -- 🎨 สร้างหน้าต่าง GUI
@@ -67,9 +114,7 @@ MainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 24); MainFrame.BorderSizePix
 local MainCorner = Instance.new("UICorner"); MainCorner.CornerRadius = UDim.new(0, 8); MainCorner.Parent = MainFrame
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if not gameProcessed and input.KeyCode == Enum.KeyCode.G then
-        MainFrame.Visible = not MainFrame.Visible
-    end
+    if not gameProcessed and input.KeyCode == Enum.KeyCode.G then MainFrame.Visible = not MainFrame.Visible end
 end)
 
 local TopBar = Instance.new("Frame")
@@ -77,7 +122,7 @@ TopBar.Parent = MainFrame; TopBar.Size = UDim2.new(1, 0, 0, 36); TopBar.Backgrou
 
 local Title = Instance.new("TextLabel")
 Title.Parent = TopBar; Title.Size = UDim2.new(1, -50, 1, 0); Title.Position = UDim2.new(0, 14, 0, 0); Title.BackgroundTransparency = 1
-Title.Text = "🌀 Auto Portal Hub V.89  •  [Press 'G' to Hide]"; Title.TextColor3 = Color3.fromRGB(240, 240, 250); Title.TextSize = 12; Title.Font = Enum.Font.GothamBold; Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Text = "🌀 Auto Hub V.104 (Raid Escape Logic)  •  [Press 'G' to Hide]"; Title.TextColor3 = Color3.fromRGB(240, 240, 250); Title.TextSize = 12; Title.Font = Enum.Font.GothamBold; Title.TextXAlignment = Enum.TextXAlignment.Left
 
 local MinBtn = Instance.new("TextButton")
 MinBtn.Parent = TopBar; MinBtn.AnchorPoint = Vector2.new(1, 0.5); MinBtn.Size = UDim2.new(0, 28, 0, 24); MinBtn.Position = UDim2.new(1, -8, 0.5, 0)
@@ -101,9 +146,6 @@ MinBtn.MouseButton1Click:Connect(function()
     isMinimized = not isMinimized
     local targetSize = isMinimized and minSize or fullSize
     MinBtn.Text = isMinimized and "+" or "–"
-    Sidebar.Visible = not isMinimized
-    Container.Visible = not isMinimized
-    Footer.Visible = not isMinimized
     TweenService:Create(MainFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = targetSize}):Play()
 end)
 
@@ -147,7 +189,7 @@ addTabButton("Event", "🎃")
 
 local function createToggleBtn(parent, text, initialVal, callback)
     local btn = Instance.new("TextButton")
-    btn.Parent = parent; btn.Size = UDim2.new(1, 0, 0, 30); btn.Font = Enum.Font.GothamBold; btn.TextSize = 11
+    btn.Parent = parent; btn.Size = UDim2.new(1, 0, 0, 28); btn.Font = Enum.Font.GothamBold; btn.TextSize = 11
     local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 6); corner.Parent = btn
     local state = initialVal
     local function updateVisual()
@@ -164,7 +206,7 @@ end
 
 local function createOptionBtn(parent, text, color, callback)
     local btn = Instance.new("TextButton")
-    btn.Parent = parent; btn.Size = UDim2.new(1, 0, 0, 30); btn.Font = Enum.Font.GothamBold; btn.TextSize = 11
+    btn.Parent = parent; btn.Size = UDim2.new(1, 0, 0, 28); btn.Font = Enum.Font.GothamBold; btn.TextSize = 11
     btn.Text = text; btn.TextColor3 = Color3.fromRGB(240, 240, 250); btn.BackgroundColor3 = color
     local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 6); corner.Parent = btn
     btn.MouseButton1Click:Connect(function() callback(btn) end)
@@ -175,21 +217,37 @@ end
 -- 🎛️ หมวด UI Controls
 -- ==========================================
 
--- Portal Page
-createToggleBtn(portalPage, "Auto Portal", _G.AutoPortal, function(val) _G.AutoPortal = val if val then autoPortalLoop() end end)
+-- 🌀 Portal Page
+createToggleBtn(portalPage, "Auto Portal (ON/OFF)", _G.AutoPortal, function(val) _G.AutoPortal = val end)
 createToggleBtn(portalPage, "Auto Place (Portal)", _G.AutoPlacePortal, function(val) _G.AutoPlacePortal = val end)
-createOptionBtn(portalPage, "⚙️ Place Mode: Team Loadout", Color3.fromRGB(60, 45, 85), function(btn)
-    if _G.PlaceModePortal == "TeamLoadout" then _G.PlaceModePortal = "EquipBest"; btn.Text = "⚙️ Place Mode: Equip Best"
-    else _G.PlaceModePortal = "TeamLoadout"; btn.Text = "⚙️ Place Mode: Team Loadout" end
+createToggleBtn(portalPage, "Auto Join (Alt Bot)", _G.AutoJoin, function(val) _G.AutoJoin = val if val then autoJoinLoop() end end)
+createOptionBtn(portalPage, "⚙️ Mode: Equip Best", Color3.fromRGB(80, 50, 120), function(btn)
+    if _G.PlaceModePortal == "EquipBest" then _G.PlaceModePortal = "Preset"; btn.Text = "⚙️ Mode: Preset Team"; btn.BackgroundColor3 = Color3.fromRGB(50, 100, 120)
+    else _G.PlaceModePortal = "EquipBest"; btn.Text = "⚙️ Mode: Equip Best"; btn.BackgroundColor3 = Color3.fromRGB(80, 50, 120) end
 end)
-createOptionBtn(portalPage, "🎒 Select Team (Portal): " .. _G.SelectedPortalTeam, Color3.fromRGB(35, 65, 75), function(btn)
-    _G.SelectedPortalTeam = _G.SelectedPortalTeam + 1 if _G.SelectedPortalTeam > 6 then _G.SelectedPortalTeam = 1 end
-    btn.Text = "🎒 Select Team (Portal): " .. _G.SelectedPortalTeam
+createOptionBtn(portalPage, "🎯 Rank Priority: " .. allPortals[selectedRankIndex], Color3.fromRGB(50, 50, 70), function(btn)
+    selectedRankIndex = selectedRankIndex + 1 if selectedRankIndex > #allPortals then selectedRankIndex = 1 end
+    btn.Text = "🎯 Rank Priority: " .. allPortals[selectedRankIndex]
 end)
-portalPage.CanvasSize = UDim2.new(0, 0, 0, 300)
+local pTeamBtn = createOptionBtn(portalPage, "📁 Preset: " .. _G.CurrentTeam, Color3.fromRGB(40, 60, 90), function(btn)
+    if _G.CurrentTeam == "Team1" then _G.CurrentTeam = "Team2" elseif _G.CurrentTeam == "Team2" then _G.CurrentTeam = "Team3" else _G.CurrentTeam = "Team1" end
+    btn.Text = "📁 Preset: " .. _G.CurrentTeam .. " (" .. #(_G.TeamsData[_G.CurrentTeam] or {}) .. " towers)"
+end)
+createOptionBtn(portalPage, "🎙️ Start Record Placement", Color3.fromRGB(200, 120, 30), function(btn)
+    _G.IsRecording = not _G.IsRecording
+    if _G.IsRecording then
+        _G.TeamsData[_G.CurrentTeam] = {}; btn.Text = "⏹️ Stop & Save " .. _G.CurrentTeam; btn.BackgroundColor3 = Color3.fromRGB(200, 50, 50); StatusLabel.Text = "Recording: Place towers now!"
+    else
+        savePresetsToFile(); btn.Text = "🎙️ Start Record Placement"; btn.BackgroundColor3 = Color3.fromRGB(200, 120, 30); pTeamBtn.Text = "📁 Preset: " .. _G.CurrentTeam .. " (" .. #(_G.TeamsData[_G.CurrentTeam] or {}) .. " towers)"
+    end
+end)
+createOptionBtn(portalPage, "⏳ Start Delay: " .. _G.StartDelay .. "s", Color3.fromRGB(60, 80, 100), function(btn)
+    _G.StartDelay = _G.StartDelay + 1 if _G.StartDelay > 5 then _G.StartDelay = 1 end; btn.Text = "⏳ Start Delay: " .. _G.StartDelay .. "s"
+end)
+portalPage.CanvasSize = UDim2.new(0, 0, 0, 320)
 
--- Raid Page
-createToggleBtn(raidPage, "Auto Raid (ON/OFF)", _G.AutoRaid, function(val) _G.AutoRaid = val if val then autoRaidLoop() end end)
+-- ⚔️ Raid Page
+createToggleBtn(raidPage, "Auto Raid (ON/OFF)", _G.AutoRaid, function(val) _G.AutoRaid = val end)
 createToggleBtn(raidPage, "Auto Place (Raid)", _G.AutoPlaceRaid, function(val) _G.AutoPlaceRaid = val end)
 createOptionBtn(raidPage, "⚙️ Place Mode: Team Loadout", Color3.fromRGB(60, 45, 85), function(btn)
     if _G.PlaceModeRaid == "TeamLoadout" then _G.PlaceModeRaid = "EquipBest"; btn.Text = "⚙️ Place Mode: Equip Best"
@@ -199,19 +257,22 @@ createOptionBtn(raidPage, "🎒 Select Team (Raid): " .. _G.SelectedRaidTeam, Co
     _G.SelectedRaidTeam = _G.SelectedRaidTeam + 1 if _G.SelectedRaidTeam > 6 then _G.SelectedRaidTeam = 1 end
     btn.Text = "🎒 Select Team (Raid): " .. _G.SelectedRaidTeam
 end)
-
--- 🌟 [ปุ่มใหม่] เลือกความยาก Raid
 createOptionBtn(raidPage, "🔥 Difficulty: " .. _G.RaidDiffs[_G.RaidDiffIndex], Color3.fromRGB(100, 40, 40), function(btn)
     _G.RaidDiffIndex = _G.RaidDiffIndex + 1
     if _G.RaidDiffIndex > #_G.RaidDiffs then _G.RaidDiffIndex = 1 end
     btn.Text = "🔥 Difficulty: " .. _G.RaidDiffs[_G.RaidDiffIndex]
 end)
-
+-- 🌍 ย้ายปุ่มเลือกรังหลบภัยมาไว้ที่ Raid!
+createOptionBtn(raidPage, "🌍 Escape to: " .. _G.EscapeMaps[_G.EscapeMapIndex].name, Color3.fromRGB(40, 80, 100), function(btn)
+    _G.EscapeMapIndex = _G.EscapeMapIndex + 1
+    if _G.EscapeMapIndex > #_G.EscapeMaps then _G.EscapeMapIndex = 1 end
+    btn.Text = "🌍 Escape to: " .. _G.EscapeMaps[_G.EscapeMapIndex].name
+end)
 createToggleBtn(raidPage, "Auto Select Best Card", _G.AutoSelectCard, function(val) _G.AutoSelectCard = val end)
-raidPage.CanvasSize = UDim2.new(0, 0, 0, 260)
+raidPage.CanvasSize = UDim2.new(0, 0, 0, 300)
 
--- Event Page
-createToggleBtn(eventPage, "Auto Event (ON/OFF)", _G.AutoEvent, function(val) _G.AutoEvent = val if val then autoEventLoop() end end)
+-- 🎃 Event Page
+createToggleBtn(eventPage, "Auto Event (ON/OFF)", _G.AutoEvent, function(val) _G.AutoEvent = val end)
 createToggleBtn(eventPage, "Auto Place (Event)", _G.AutoPlaceEvent, function(val) _G.AutoPlaceEvent = val end)
 createOptionBtn(eventPage, "⚙️ Place Mode: Team Loadout", Color3.fromRGB(60, 45, 85), function(btn)
     if _G.PlaceModeEvent == "TeamLoadout" then _G.PlaceModeEvent = "EquipBest"; btn.Text = "⚙️ Place Mode: Equip Best"
@@ -221,269 +282,387 @@ createOptionBtn(eventPage, "🎒 Select Team (Event): " .. _G.SelectedEventTeam,
     _G.SelectedEventTeam = _G.SelectedEventTeam + 1 if _G.SelectedEventTeam > 6 then _G.SelectedEventTeam = 1 end
     btn.Text = "🎒 Select Team (Event): " .. _G.SelectedEventTeam
 end)
-
--- 🌟 [ปุ่มใหม่] เลือกความยาก Event
 createOptionBtn(eventPage, "🔥 Difficulty: " .. _G.EventDiffs[_G.EventDiffIndex], Color3.fromRGB(100, 40, 40), function(btn)
     _G.EventDiffIndex = _G.EventDiffIndex + 1
     if _G.EventDiffIndex > #_G.EventDiffs then _G.EventDiffIndex = 1 end
     btn.Text = "🔥 Difficulty: " .. _G.EventDiffs[_G.EventDiffIndex]
 end)
-
 eventPage.CanvasSize = UDim2.new(0, 0, 0, 220)
+
 selectTab("Raid")
 
 -- ==========================================
--- 🛠️ ฟังก์ชันเจาะลึก
+-- 🛠️ ฟังก์ชัน AI ตรวจสอบสถานะ
 -- ==========================================
-local function isUIActuallyVisible(guiElement)
-    if not guiElement then return false end
-    local current = guiElement
-    while current and current ~= game do
-        if current:IsA("GuiObject") and not current.Visible then return false end
-        if current:IsA("ScreenGui") and not current.Enabled then return false end
-        current = current.Parent
-    end
-    return true
-end
-
-local function clickObject(obj)
-    if not obj then return end
-    pcall(function()
-        if firesignal and obj:IsA("GuiButton") then
-            firesignal(obj.MouseButton1Click)
-            firesignal(obj.Activated)
-        end
-        for _, conn in pairs(getconnections(obj.MouseButton1Click or obj.Activated)) do conn:Fire() end
-    end)
-end
-
--- 🌟 1. นาฬิกาแบบ Real-Time
 local function checkRealTimeEvent()
     local t = os.date("*t")
-    local min = t.min
-    if min >= 0 and min < 30 then
-        return true, string.format("Closes In: %02d:%02d", 29 - min, 59 - t.sec)
+    if t.min >= 0 and t.min < 30 then
+        return true, string.format("Closes In: %02d:%02d", 29 - t.min, 59 - t.sec)
     else
-        return false, string.format("Opens In: %02d:%02d", 59 - min, 59 - t.sec)
+        return false, string.format("Opens In: %02d:%02d", 59 - t.min, 59 - t.sec)
     end
 end
 
--- 🌟 2. ดึงชื่อแมพ
-local function getLocation()
-    local loc = "Lobby"
+local function getMapName()
+    local name = ""
     pcall(function()
         if player.PlayerGui then
             for _, gui in pairs(player.PlayerGui:GetDescendants()) do
                 if gui:IsA("TextLabel") and gui.Name == "MapName" then
-                    local txt = string.lower(gui.Text)
-                    if string.find(txt, "wish") or string.find(txt, "nightmare") then
-                        loc = "Event"; return
-                    elseif txt ~= "" and not string.find(txt, "lobby") then
-                        loc = "Match"; return
-                    end
+                    name = string.lower(gui.ContentText ~= "" and gui.ContentText or gui.Text)
+                    return
                 end
             end
         end
     end)
-    return loc
+    return name
 end
 
--- 🌟 3. สแกนหาปุ่ม Replay (สำหรับ Event)
-local function checkEndMatch(callback)
-    pcall(function()
-        if player.PlayerGui then
-            for _, gui in pairs(player.PlayerGui:GetDescendants()) do
-                if (gui:IsA("TextLabel") or gui:IsA("TextButton")) and isUIActuallyVisible(gui) then
-                    local text = string.lower(string.gsub(gui.ContentText ~= "" and gui.ContentText or gui.Text, "<[^>]->", ""))
-                    if text == "start" or text == "replay" or text == "play again" or text == "next" then
-                        local btn = gui:IsA("GuiButton") and gui or gui:FindFirstAncestorWhichIsA("GuiButton")
-                        if btn then clickObject(btn) end
-                        if callback then callback() end
-                        task.wait(5)
-                    elseif text == "lobby" or text == "return" or text == "home" then
-                        local btn = gui:IsA("GuiButton") and gui or gui:FindFirstAncestorWhichIsA("GuiButton")
-                        if btn then clickObject(btn) end
-                        task.wait(5)
-                    end
-                end
-            end
-        end
-    end)
-end
-
--- 🌟 4. ฟังก์ชันวางตัว 1 ตัว (บังคับรอจนเสร็จ)
-local function executePlacementsBlocking(mode, teamNum)
-    if mode == "EquipBest" then
+-- ==========================================
+-- 🚀 ระบบวางตัวละครแบบครอบจักรวาล
+-- ==========================================
+local function placeTowers(mode, teamNum)
+    if mode == "EquipBest" or mode == "Preset" then
         pcall(function() rs.Remotes.Towers.EquipBestTowers:InvokeServer() end)
-    else
+    elseif mode == "TeamLoadout" then
         pcall(function() rs.Remotes.Towers.LoadTeamLoadout:InvokeServer(teamNum) end)
     end
-    task.wait(2.5) 
-    for attempt = 1, 10 do
-        local placed = false
-        pcall(function()
-            local placeRemote = rs.Remotes.Towers.PlaceTower
-            if placeRemote then
+    
+    task.wait(2.5) -- รอโหลดกระเป๋า
+    
+    pcall(function()
+        local placeRemote = rs:WaitForChild("Remotes", 3):WaitForChild("Towers", 3):WaitForChild("PlaceTower", 3)
+        if not placeRemote then return end
+        
+        if mode == "Preset" then
+            local currentPreset = _G.TeamsData[_G.CurrentTeam] or {}
+            for loop = 1, 2 do
+                for _, args in ipairs(currentPreset) do
+                    pcall(function() placeRemote:FireServer(unpack(args)) end)
+                    task.wait(0.05)
+                end
+                task.wait(1)
+            end
+        else
+            for attempt = 1, 5 do
+                local placed = false
                 for _, v in pairs(player.PlayerGui:GetDescendants()) do
                     if v:IsA("StringValue") and string.find(string.lower(v.Name), "uuid") and #v.Value > 20 then
-                        placeRemote:FireServer(v.Value, CFrame.new(0,0,0))
-                        placed = true; break 
+                        placeRemote:FireServer(v.Value, CFrame.new(0,0,0)); placed = true; break 
                     end
                 end
+                if placed then break end
+                task.wait(1)
             end
-        end)
-        if placed then return true end
-        task.wait(1) 
-    end
+        end
+    end)
 end
 
 -- ==========================================
--- ⚔️ ระบบ Auto Raid (สเต็ปเดียวจบ ปล่อยเกมรันเองยาวๆ)
+-- 🌀 ระบบหาห้อง Portal 
 -- ==========================================
-function autoRaidLoop()
-    task.spawn(function()
-        local raidState = "Idle" 
-        
-        while _G.AutoRaid do
-            task.wait(1)
-            local isEventOpen, timeStr = checkRealTimeEvent()
-            
-            -- 🚨 Priority: Event เปิด -> ทิ้ง Raid วาร์ปกลับ CapsuleCorp ทันที!
-            if _G.AutoEvent and isEventOpen then
-                if raidState == "Running" or raidState == "Joining" then
-                    StatusLabel.Text = "🚨 Event OPEN! Warping to CapsuleCorp..."
-                    StatusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
-                    pcall(function() rs.Remotes.Maps.SelectMap:FireServer("CapsuleCorp") end)
-                    raidState = "Idle" 
-                    task.wait(8)
+local function checkNegativeWindDebuff()
+    local windValue = 0
+    pcall(function()
+        local hover = player.PlayerGui:FindFirstChild("HoverPortalClick")
+        if hover then
+            local elem = hover:FindFirstChild("Elemental")
+            if elem then
+                local scroll = elem:FindFirstChild("ScrollingFrame")
+                if scroll then
+                    local negWind = scroll:FindFirstChild("Negative_Wind")
+                    if negWind then
+                        local numLabel = negWind:FindFirstChild("Number")
+                        if numLabel and numLabel:IsA("TextLabel") then
+                            local extractedNum = string.match(numLabel.Text, "%d+")
+                            if extractedNum then windValue = tonumber(extractedNum) or 0 end
+                        end
+                    end
                 end
-                continue 
             end
+        end
+    end)
+    return windValue
+end
+
+local function getBestPortalUUID()
+    local activePriority = {}
+    for i = selectedRankIndex, #allPortals do table.insert(activePriority, allPortals[i]) end
+
+    for _, pName in ipairs(activePriority) do
+        local candidateUUIDs = {}
+        if getgc then
+            for _, obj in pairs(getgc(true)) do
+                if type(obj) == "table" then
+                    pcall(function()
+                        for key, val in pairs(obj) do
+                            if type(val) == "table" then
+                                local isMatch = false
+                                for _, v in pairs(val) do if v == pName then isMatch = true; break end end
+
+                                if isMatch then
+                                    local windDebuff = val.Negative_Wind or val.WindDebuff or 0
+                                    if type(windDebuff) == "string" then windDebuff = tonumber(string.match(windDebuff, "%d+")) or 0 end
+                                    local uuid = nil
+                                    if type(key) == "string" and #key >= 30 and string.find(key, "-") then uuid = key end
+                                    for _, v in pairs(val) do if type(v) == "string" and #v >= 30 and string.find(v, "-") then uuid = v; break end end
+                                    if uuid then table.insert(candidateUUIDs, {uuid = uuid, wind = windDebuff}) end
+                                end
+                            end
+                        end
+                    end)
+                end
+            end
+        end
+        for _, portalInfo in ipairs(candidateUUIDs) do
+            local uiWind = checkNegativeWindDebuff()
+            local finalWind = math.max(portalInfo.wind, uiWind)
+            if finalWind < maxAllowedWindDebuff then
+                return portalInfo.uuid, pName, finalWind
+            end
+        end
+    end
+    return nil, nil, 0
+end
+
+local function forceLoadInventory()
+    pcall(function()
+        local display = player.PlayerGui.Drops.Display
+        display.Visible = true; task.wait(0.3); display.Visible = false
+    end)
+end
+
+local function clickStartPortal()
+    pcall(function() rs.Remotes.Coop.Start:InvokeServer() end)
+    pcall(function() rs.Remotes.Coop.Start:FireServer() end)
+end
+
+-- ==========================================
+-- 🧠 THE MASTER LOOP (สมองกลศูนย์กลาง จัดการคิวเป๊ะๆ)
+-- ==========================================
+task.spawn(function()
+    local portalPlaced = false
+
+    while task.wait(1) do
+        local isEventTime, timeStr = checkRealTimeEvent()
+        local mapName = getMapName()
+        
+        local inEventMap = (string.find(mapName, "wish") or string.find(mapName, "nightmare"))
+        local inRaidMap = (string.find(mapName, "raid") or string.find(mapName, "extreme raid"))
+        local inPortalMap = string.find(mapName, "solo island")
+
+        -- 🚨 PRIORITY 1: EVENT มา! ลัดคิวทุกอย่าง
+        if _G.AutoEvent and isEventTime then
+            _G.RaidSequenceDone = false -- ปลดล็อคให้ Raid ทำงานในรอบถัดไป
+            portalPlaced = false
             
-            -- ⚔️ สเต็ปของ Raid
-            if raidState == "Idle" then
-                raidState = "Joining"
-                local currentDiff = _G.RaidDiffs[_G.RaidDiffIndex]
-                StatusLabel.Text = "⚔️ Raid | 1. Joining " .. currentDiff .. " Raid..."
-                StatusLabel.TextColor3 = Color3.fromRGB(200, 100, 255)
+            if not inEventMap then
+                -- 🌍 ถ้ายังไม่เข้า Event... เช็คก่อนว่า "เราติดอยู่ใน Raid/Portal ไหม?"
+                if inRaidMap or inPortalMap then
+                    local escapeTarget = _G.EscapeMaps[_G.EscapeMapIndex].value
+                    local escapeName = _G.EscapeMaps[_G.EscapeMapIndex].name
+                    
+                    StatusLabel.Text = "🚨 Event OPEN! Escaping to " .. escapeName .. "..."
+                    StatusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+                    -- วาร์ปหนีออกจาก Raid ไปด่านที่กำหนด
+                    pcall(function() rs.Remotes.Maps.SelectMap:FireServer(escapeTarget) end)
+                    task.wait(8) -- รอโหลดแมพ 8 วิให้ชัวร์ๆ ว่าออกสำเร็จ
+                end
                 
-                -- สเต็ป 1: เข้า Raid ตามระดับความยากที่เลือก
-                pcall(function() rs.Remotes.Maps.SelectRaid:InvokeServer(currentDiff) end)
+                -- พออยู่หน้าด่านปกติแล้ว ค่อยสร้างห้องเข้า Event
+                local diff = _G.EventDiffs[_G.EventDiffIndex]
+                StatusLabel.Text = "🎃 Event | Joining " .. diff .. "..."
+                pcall(function() rs.Remotes.EventDB.CreateLobby:InvokeServer(diff) end)
+                task.wait(2)
+                pcall(function() rs.Remotes.EventDB.Start:InvokeServer() end)
+                task.wait(1)
+                pcall(function() rs.Remotes.EventDB.Start:InvokeServer() end)
                 
-                -- สเต็ป 2: รอโหลด 10 วิ
-                StatusLabel.Text = "⚔️ Raid | 2. Waiting 10s for map load..."
+                StatusLabel.Text = "🎃 Event | Waiting 10s for map..."
                 task.wait(10)
                 
-                -- สเต็ป 3: วางตัว
-                if _G.AutoPlaceRaid then
-                    StatusLabel.Text = "⚔️ Raid | 3. Placing Towers..."
-                    executePlacementsBlocking(_G.PlaceModeRaid, _G.SelectedRaidTeam)
-                end
-                
-                -- สเต็ป 4: กดเริ่ม
-                StatusLabel.Text = "⚔️ Raid | 4. Starting Match!"
-                task.wait(1)
-                pcall(function() rs.Remotes.Maps.StartRaid:InvokeServer() end)
-                
-                raidState = "Running"
-                task.wait(3)
-                
-            elseif raidState == "Running" then
-                -- 🟢 นั่งเฉยๆ! ให้เกมจัดการ Auto-Replay ของมันเอง!
-                StatusLabel.Text = "⚔️ Raid | Auto-Farming... (Event " .. timeStr .. ")"
-                task.wait(2)
-            end
-        end
-    end)
-end
-
--- ==========================================
--- 🎃 ระบบ Auto Event 
--- ==========================================
-function autoEventLoop()
-    task.spawn(function()
-        local eventState = "Outside"
-        while _G.AutoEvent do
-            task.wait(1)
-            local isEventOpen, timeStr = checkRealTimeEvent()
-            
-            if isEventOpen then
-                if eventState == "Outside" then
-                    local currentDiff = _G.EventDiffs[_G.EventDiffIndex]
-                    StatusLabel.Text = "✅ Event OPEN | Creating " .. currentDiff .. " Lobby..."
-                    StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-                    
-                    -- สร้างห้อง Event ตามระดับความยากที่เลือก
-                    pcall(function() rs.Remotes.EventDB.CreateLobby:InvokeServer(currentDiff) end)
-                    task.wait(2)
-                    pcall(function() rs.Remotes.EventDB.Start:InvokeServer() end)
-                    task.wait(1)
-                    pcall(function() rs.Remotes.EventDB.Start:InvokeServer() end)
-                    
-                    StatusLabel.Text = "✅ Event OPEN | Waiting 10s for map..."
-                    task.wait(10)
-                    eventState = "Inside"
-                    
-                elseif eventState == "Inside" then
-                    if _G.AutoPlaceEvent then
-                        StatusLabel.Text = "🎃 Event | Loading Team & Placing..."
-                        executePlacementsBlocking(_G.PlaceModeEvent, _G.SelectedEventTeam)
-                    end
-                    
-                    StatusLabel.Text = "🎃 Event | Match in progress... (" .. timeStr .. ")"
-                    local matchEnded = false
-                    while _G.AutoEvent and not matchEnded do
-                        task.wait(2)
-                        checkEndMatch(function()
-                            -- Event ไม่ได้เริ่มเอง ต้องยิง Start ใหม่ตอนจบเกม
-                            pcall(function() rs.Remotes.EventDB.Start:InvokeServer() end)
-                            StatusLabel.Text = "🎃 Event | Replaying... Waiting 10s"
-                            task.wait(10)
-                            matchEnded = true
-                            eventState = "Inside" -- กลับไปวางป้อมรอบใหม่
-                        end)
-                    end
+                if _G.AutoPlaceEvent then
+                    StatusLabel.Text = "🎃 Event | Placing Towers..."
+                    placeTowers(_G.PlaceModeEvent, _G.SelectedEventTeam)
                 end
             else
-                eventState = "Outside"
+                -- 🟢 อยู่ในด่าน Event แล้ว -> นั่งรอเกมเล่นไป
+                StatusLabel.Text = "🎃 Event | Match in progress... (" .. timeStr .. ")"
+                StatusLabel.TextColor3 = Color3.fromRGB(255, 170, 0)
+                
+                pcall(function()
+                    if player.PlayerGui then
+                        for _, gui in pairs(player.PlayerGui:GetDescendants()) do
+                            if (gui:IsA("TextLabel") or gui:IsA("TextButton")) and gui.Visible then
+                                local text = string.lower(gui.ContentText ~= "" and gui.ContentText or gui.Text)
+                                if text == "start" or text == "replay" or text == "play again" then
+                                    pcall(function() rs.Remotes.EventDB.Start:InvokeServer() end)
+                                    task.wait(3)
+                                end
+                            end
+                        end
+                    end
+                end)
+            end
+
+        -- ⏳ OVERTIME (เวลา Event หมด แต่ตัวเรายังสู้ไม่จบในด่าน Event)
+        elseif _G.AutoEvent and inEventMap then
+            StatusLabel.Text = "🎃 Event | OVERTIME! Waiting to finish... " .. timeStr
+            StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+
+        -- ⚔️ PRIORITY 2: RAID (เมื่อไม่ได้อยู่ใน Wish Event)
+        elseif _G.AutoRaid then
+            if inRaidMap then
+                StatusLabel.Text = "⚔️ Raid | Auto-Farming... Waiting for Event (" .. timeStr .. ")"
+                StatusLabel.TextColor3 = Color3.fromRGB(200, 100, 255)
+            else
+                if not _G.RaidSequenceDone then
+                    local diff = _G.RaidDiffs[_G.RaidDiffIndex]
+                    StatusLabel.Text = "⚔️ Raid | Joining " .. diff .. " Raid..."
+                    pcall(function() rs.Remotes.Maps.SelectRaid:InvokeServer(diff) end)
+                    
+                    StatusLabel.Text = "⚔️ Raid | Waiting 10s..."
+                    task.wait(10)
+                    
+                    if _G.AutoPlaceRaid then
+                        StatusLabel.Text = "⚔️ Raid | Placing Towers..."
+                        placeTowers(_G.PlaceModeRaid, _G.SelectedRaidTeam)
+                    end
+                    
+                    StatusLabel.Text = "⚔️ Raid | Clicking Start!"
+                    task.wait(1)
+                    pcall(function() rs.Remotes.Maps.StartRaid:InvokeServer() end)
+                    
+                    _G.RaidSequenceDone = true 
+                else
+                    StatusLabel.Text = "⚔️ Raid | Match Loading..."
+                end
+            end
+
+        -- 🌀 PRIORITY 3: PORTAL 
+        elseif _G.AutoPortal then
+            if inPortalMap then
+                StatusLabel.Text = "🌀 Portal | In Match"
+                StatusLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
+                if _G.AutoPlacePortal and not portalPlaced then
+                    task.wait(5)
+                    placeTowers(_G.PlaceModePortal, _G.SelectedPortalTeam)
+                    task.wait(1)
+                    clickStartPortal()
+                    portalPlaced = true
+                end
+            elseif inRaidMap then
+                -- ถ้าไม่ได้เปิด AutoRaid แต่ดันหลงเข้าไปใน Raid
                 if not _G.AutoRaid then
-                    StatusLabel.Text = "⏳ Event CLOSED | " .. timeStr
+                    local escapeTarget = _G.EscapeMaps[_G.EscapeMapIndex].value
+                    pcall(function() rs.Remotes.Maps.SelectMap:FireServer(escapeTarget) end)
+                    task.wait(5)
+                end
+            else
+                portalPlaced = false
+                StatusLabel.Text = "🌀 Scanning Portals..."
+                StatusLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
+                forceLoadInventory()
+                local uuid, portalName, windDebuff = getBestPortalUUID()
+
+                if uuid and activateRemote then
+                    StatusLabel.Text = "🌀 Found: " .. portalName .. " (-" .. windDebuff .. "%)"
+                    StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+                    
+                    pcall(function()
+                        if activateRemote:IsA("RemoteEvent") then activateRemote:FireServer(uuid)
+                        else activateRemote:InvokeServer(uuid) end
+                    end)
+
+                    for i = _G.StartDelay, 1, -1 do
+                        StatusLabel.Text = "🌀 Waiting Alt Join: " .. i .. "s"
+                        task.wait(1)
+                    end
+                    clickStartPortal(); task.wait(5); clickStartPortal(); task.wait(3)
+                else
+                    StatusLabel.Text = "🌀 No safe portals. Retrying..."
                     StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+                    task.wait(3)
+                end
+            end
+        
+        else
+            StatusLabel.Text = "Status: Idle (" .. timeStr .. ")"
+            StatusLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+        end
+    end
+end)
+
+-- ==========================================
+-- 🔵 ลูป Auto Join สำหรับไอดีรอง
+-- ==========================================
+function autoJoinLoop()
+    task.spawn(function()
+        local hasPlacedAlt = false
+        while _G.AutoJoin do
+            local map = getMapName()
+            if string.find(map, "solo island") then
+                if _G.AutoPlacePortal and not hasPlacedAlt then
+                    placeTowers(_G.PlaceModePortal, _G.SelectedPortalTeam)
+                    hasPlacedAlt = true
                 end
                 task.wait(2)
+            else
+                hasPlacedAlt = false
+                pcall(function()
+                    local char = player.Character or player.CharacterAdded:Wait()
+                    local hrp = char:FindFirstChild("HumanoidRootPart")
+
+                    for _, prompt in pairs(workspace:GetDescendants()) do
+                        if prompt:IsA("ProximityPrompt") then
+                            local actionText = string.lower(prompt.ActionText or "")
+                            local objectText = string.lower(prompt.ObjectText or "")
+                            local parentName = string.lower(prompt.Parent and prompt.Parent.Name or "")
+
+                            if string.find(actionText, "join") or string.find(actionText, "portal") or 
+                               string.find(objectText, "portal") or string.find(parentName, "portal") then
+
+                                local parentPart = prompt.Parent:IsA("BasePart") and prompt.Parent or prompt.Parent:FindFirstChildWhichIsA("BasePart")
+
+                                if hrp and parentPart then
+                                    hrp.CFrame = parentPart.CFrame * CFrame.new(0, 0, -2)
+                                    task.wait(0.1)
+                                    if fireproximityprompt then fireproximityprompt(prompt) end
+
+                                    local touch = parentPart:FindFirstChildOfClass("TouchTransmitter") or parentPart:FindFirstChild("TouchInterest")
+                                    if touch then
+                                        firetouchinterest(hrp, parentPart, 0)
+                                        task.wait(0.1)
+                                        firetouchinterest(hrp, parentPart, 1)
+                                    end
+                                    task.wait(3)
+                                end
+                            end
+                        end
+                    end
+                end)
+                task.wait(0.5)
             end
         end
     end)
 end
 
 -- ==========================================
--- ระบบสแกนและจัดอันดับการ์ด (Raid Cards)
+-- ระบบสแกนและเลือกการ์ดอัตโนมัติ
 -- ==========================================
 local cardDatabase = {
-    ["Tower Attack Speed"]  = { base = 95, isBuff = true },
-    ["Tower Damage"]        = { base = 95, isBuff = true },
-    ["Tower Range"]         = { base = 90, isBuff = true },
-    ["Boss Slayer"]         = { base = 85, isBuff = true },
-    ["Lucky Break"]         = { base = 80, isBuff = true },
-    ["Copy Blessing"]       = { base = 80, isBuff = true },
-    ["One Life"]            = { base = 75, isBuff = true },
-    ["Double or Nothing"]   = { base = 65, isBuff = true },
-    ["Enemy Speed"]         = { base = 50, isBuff = false },
-    ["Enemy HP"]            = { base = 45, isBuff = false },
-    ["Enemy Shield"]        = { base = 45, isBuff = false },
-    ["Boss Shield"]         = { base = 45, isBuff = false },
-    ["Enemy Regen"]         = { base = 40, isBuff = false },
-    ["Boss HP"]             = { base = 35, isBuff = false }, 
-    ["Final Boss Trial"]    = { base = 30, isBuff = false },
-    ["Cursed Copy"]         = { base = 25, isBuff = false },
-    ["Heavenly Trial"]      = { base = 18, isBuff = false },
-    ["Control Resistance"]  = { base = 15, isBuff = false },
-    ["Domain Expansion"]    = { base = 10, isBuff = false },
-    ["King's Challenge"]    = { base = 10, isBuff = false },
-    ["Cursed Jackpot"]      = { base = 10, isBuff = false },
-    ["Final Nightmare"]     = { base = 5,  isBuff = false },
-    ["Curse Overflow"]      = { base = -100, isBuff = false },
-    ["Sealed Potential"]    = { base = -999, isBuff = false }
+    ["Tower Attack Speed"]  = { base = 95, isBuff = true }, ["Tower Damage"]        = { base = 95, isBuff = true },
+    ["Tower Range"]         = { base = 90, isBuff = true }, ["Boss Slayer"]         = { base = 85, isBuff = true },
+    ["Lucky Break"]         = { base = 80, isBuff = true }, ["Copy Blessing"]       = { base = 80, isBuff = true },
+    ["One Life"]            = { base = 75, isBuff = true }, ["Double or Nothing"]   = { base = 65, isBuff = true },
+    ["Enemy Speed"]         = { base = 50, isBuff = false },["Enemy HP"]            = { base = 45, isBuff = false },
+    ["Enemy Shield"]        = { base = 45, isBuff = false },["Boss Shield"]         = { base = 45, isBuff = false },
+    ["Enemy Regen"]         = { base = 40, isBuff = false },["Boss HP"]             = { base = 35, isBuff = false }, 
+    ["Final Boss Trial"]    = { base = 30, isBuff = false },["Cursed Copy"]         = { base = 25, isBuff = false },
+    ["Heavenly Trial"]      = { base = 18, isBuff = false },["Control Resistance"]  = { base = 15, isBuff = false },
+    ["Domain Expansion"]    = { base = 10, isBuff = false },["King's Challenge"]    = { base = 10, isBuff = false },
+    ["Cursed Jackpot"]      = { base = 10, isBuff = false },["Final Nightmare"]     = { base = 5,  isBuff = false },
+    ["Curse Overflow"]      = { base = -100, isBuff = false },["Sealed Potential"]    = { base = -999, isBuff = false }
 }
 
 local function calculateSmartScore(titleText)
@@ -499,8 +678,7 @@ local function calculateSmartScore(titleText)
     for cardName, info in pairs(cardDatabase) do
         local compactDbName = string.gsub(string.lower(cardName), "[^%w]", "")
         if string.find(compactText, compactDbName) then
-            if info.isBuff then 
-                finalScore = info.base + ((tierMultiplier - 1) * 5)
+            if info.isBuff then finalScore = info.base + ((tierMultiplier - 1) * 5)
             else
                 if info.base > 0 then finalScore = info.base - ((tierMultiplier - 1) * 10)
                 else finalScore = info.base end
@@ -511,65 +689,44 @@ local function calculateSmartScore(titleText)
     return finalScore
 end
 
-local function getRealCardsUI()
-    local cards = {}
-    local playerGui = player:FindFirstChild("PlayerGui")
-    if not playerGui then return cards end
-    for _, descendant in pairs(playerGui:GetDescendants()) do
-        if descendant:IsA("TextLabel") and descendant.Name == "Title" and descendant.Visible then
-            local button = descendant:IsA("GuiButton") and descendant or descendant:FindFirstAncestorWhichIsA("GuiButton")
-            if not button then button = descendant.Parent end
-            if button then
-                table.insert(cards, { titleLabel = descendant, button = button })
-            end
-        end
-    end
-    return cards
+local function clickCardObject(obj)
+    pcall(function()
+        if firesignal and obj:IsA("GuiButton") then firesignal(obj.MouseButton1Click); firesignal(obj.Activated) end
+        for _, conn in pairs(getconnections(obj.MouseButton1Click or obj.Activated)) do conn:Fire() end
+    end)
 end
 
-local isProcessingCard = false
 task.spawn(function()
     while task.wait(0.5) do
-        if _G.AutoSelectCard and not isProcessingCard then
+        if _G.AutoSelectCard then
             pcall(function()
-                local activeCardsUI = getRealCardsUI()
-                if #activeCardsUI >= 3 then
-                    isProcessingCard = true
-                    StatusLabel.Text = "Status: Cards Popped Up! Reading..."
-                    task.wait(1)
-                    activeCardsUI = getRealCardsUI()
+                local cards = {}
+                if player.PlayerGui then
+                    for _, descendant in pairs(player.PlayerGui:GetDescendants()) do
+                        if descendant:IsA("TextLabel") and descendant.Name == "Title" and descendant.Visible then
+                            local button = descendant:IsA("GuiButton") and descendant or descendant:FindFirstAncestorWhichIsA("GuiButton")
+                            if not button then button = descendant.Parent end
+                            if button then table.insert(cards, { titleLabel = descendant, button = button }) end
+                        end
+                    end
+                end
+                
+                if #cards >= 3 then
                     local detectedCards = {}
-                    for _, cardInfo in ipairs(activeCardsUI) do
+                    for _, cardInfo in ipairs(cards) do
                         local rawText = cardInfo.titleLabel.ContentText ~= "" and cardInfo.titleLabel.ContentText or cardInfo.titleLabel.Text
-                        local score = calculateSmartScore(rawText)
-                        table.insert(detectedCards, { title = rawText, score = score, button = cardInfo.button })
+                        table.insert(detectedCards, { title = rawText, score = calculateSmartScore(rawText), button = cardInfo.button })
                     end
                     if #detectedCards > 0 then
                         table.sort(detectedCards, function(a, b) return a.score > b.score end)
                         local bestChoice = detectedCards[1]
-                        if _G.CardSelectDelay and _G.CardSelectDelay > 0 then
-                            for i = _G.CardSelectDelay, 1, -1 do
-                                if not _G.AutoSelectCard then break end
-                                StatusLabel.Text = "Status: Picking [" .. bestChoice.title .. "] in " .. i .. "s"
-                                StatusLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
-                                task.wait(1)
-                            end
-                        end
-                        if _G.AutoSelectCard then
-                            StatusLabel.Text = "Status: Card Picked -> " .. bestChoice.title
-                            StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-                            clickObject(bestChoice.button)
-                            task.wait(2) 
-                        end
+                        if _G.CardSelectDelay > 0 then task.wait(_G.CardSelectDelay) end
+                        if _G.AutoSelectCard then clickCardObject(bestChoice.button); task.wait(2) end
                     end
-                    isProcessingCard = false
                 end
             end)
         end
     end
 end)
 
-function autoPortalLoop() end
-function autoJoinLoop() end
-
-print("✅ โหลด Auto Portal Hub V.89 สำเร็จ! (เพิ่มระบบเลือกระดับความยาก Easy - Extreme ครบถ้วน!)")
+print("✅ โหลด Auto Portal Hub V.104 สำเร็จ! (ย้ายปุ่มวาร์ปหนีมาหน้า Raid และสลับลอจิกตอนหลบ Event เนียนๆ!)")
